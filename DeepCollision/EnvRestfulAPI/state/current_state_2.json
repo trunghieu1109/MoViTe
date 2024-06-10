@@ -1,0 +1,59 @@
+{
+    "4f903aff-421d-4d3d-9c97-845f161c59b8": {
+        "model": "47b529db-0593-4908-b3e7-4b24a32a0f70",
+        "name:": "Ego0",
+        "obj_color": "Vector(1, 1, 0)",
+        "positionX": -47.6984977722168,
+        "positionY": -1.202183842659,
+        "positionZ": -9.9008846282959,
+        "rotationX": 1.51106929779053,
+        "rotationY": 104.998504638672,
+        "rotationZ": 359.260284423828,
+        "velocityX": 2.94174533337355e-05,
+        "velocityY": -5.50135155208409e-08,
+        "velocityZ": -4.16527036577463e-05,
+        "angularVelocityX": 1.2644159141928e-07,
+        "angularVelocityY": -5.37778760190122e-06,
+        "angularVelocityZ": 8.0371682997793e-07
+    },
+    "a902502c-816f-4398-8b38-46f10e0079b0": {
+        "model": "Bob",
+        "name:": "Pedestrian0",
+        "obj_color": "Vector(1, 1, 0)",
+        "positionX": -29.6390838623047,
+        "positionY": -1.77331852912903,
+        "positionZ": -18.7763862609863,
+        "rotationX": 0.48748767375946,
+        "rotationY": 56.4009666442871,
+        "rotationZ": 358.347045898438,
+        "velocityX": 0,
+        "velocityY": 0,
+        "velocityZ": 0,
+        "angularVelocityX": 0,
+        "angularVelocityY": 0,
+        "angularVelocityZ": 0
+    },
+    "df0fc80e-ef78-42aa-aa3f-f7ab9d97e0db": {
+        "model": "Bob",
+        "name:": "Pedestrian0",
+        "obj_color": "Vector(1, 1, 0)",
+        "positionX": 0.581332623958588,
+        "positionY": -2.52068686485291,
+        "positionZ": -22.8360900878906,
+        "rotationX": 0,
+        "rotationY": 0,
+        "rotationZ": 0,
+        "velocityX": 0,
+        "velocityY": 0,
+        "velocityZ": 0,
+        "angularVelocityX": 0,
+        "angularVelocityY": 0,
+        "angularVelocityZ": 0
+    },
+    "worldEffect": {
+        "rain": 0,
+        "fog": 0,
+        "wetness": 0,
+        "time": 12
+    }
+}

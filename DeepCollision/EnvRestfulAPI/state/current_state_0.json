@@ -1,0 +1,25 @@
+{
+    "34fd3bda-8e2a-4f47-887a-ebfbd030d368": {
+        "model": "47b529db-0593-4908-b3e7-4b24a32a0f70",
+        "name:": "Ego0",
+        "obj_color": "Vector(1, 1, 0)",
+        "positionX": -44.7487640380859,
+        "positionY": -1.28092932701111,
+        "positionZ": -10.6976776123047,
+        "rotationX": 1.31234395503998,
+        "rotationY": 105.039642333984,
+        "rotationZ": 359.132446289063,
+        "velocityX": 4.09575891494751,
+        "velocityY": -0.106667660176754,
+        "velocityZ": -1.10613763332367,
+        "angularVelocityX": -4.00623175664805e-05,
+        "angularVelocityY": 0.00142367812804878,
+        "angularVelocityZ": -0.00288870348595083
+    },
+    "worldEffect": {
+        "rain": 0,
+        "fog": 0,
+        "wetness": 0,
+        "time": 12
+    }
+}
