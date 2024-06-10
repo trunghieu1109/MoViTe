@@ -194,9 +194,11 @@ def judge_condition(state_list, ego_state, brake_percentage, ego_world_vel, agen
     #Check braking
     if brake_percentage >= 40:
         condition[3] = 1
+        
     #Check Speeding
     if ego_sim_acc > 0: 
         condition[4] = 1
+        
     #Check Passing
     for i in range(0, len(state_list)):
         transform = state_list[i].transform
@@ -210,9 +212,12 @@ def judge_condition(state_list, ego_state, brake_percentage, ego_world_vel, agen
         if (abs(trajectory_ego_k - trajectory_agent_k) < 0.01) and np.dot(ego_diff, agent_diff) > 0  and  (ego_world_speed > agent_world_speed) and (ego_sim_acc > 0):
             condition[0] = 1
     
-    #Check Lane Changing
-        new_ego_pos = ego_velocity + ego_position
-        
+    #Check Turn & Lane change
+        angle_radians = math.atan2(road['y'], road['x']) - math.atan2(next_road['y'], next_road['x'])
+        if (abs(angle_radians) > math.pi/4): 
+            condition[2] = 1
+        elif (road['lane_id'] != next_road['lane_id']):
+            condition[1] = 1
 
     if (not sum(condition)): 
         condition[5] = 1
