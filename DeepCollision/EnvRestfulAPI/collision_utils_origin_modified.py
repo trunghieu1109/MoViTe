@@ -181,7 +181,7 @@ def judge_same_line(a1_position, a1_speed, a1_velocity, a2_position, a2_speed, k
     return judge, ego_ahead, TTC
 
 def judge_condition(state_list, ego_state, brake_percentage, ego_world_vel, agent_world_vel, 
-                       ego_sim_acc, ego_world_pos, agent_world_pos, road):
+                       ego_sim_acc, ego_world_pos, agent_world_pos, road, next_road):
     ego_transform = ego_state.transform
     ego_position = np.array([ego_transform.position.x, ego_transform.position.y, ego_transform.position.z])
     ego_velocity = np.array([ego_state.velocity.x, ego_state.velocity.y, ego_state.velocity.z])
@@ -287,7 +287,7 @@ def get_world_acc(world_speed, sim_speed, sim_acc, coord, world_vel):
 # @jit(nopython=True, fastmath=True)
 def calculate_measures(state_list, ego_state, isNpcVehicle, ego_world_vel, agent_world_vel, 
                        ego_sim_acc, agent_sim_acc, ego_world_pos, agent_world_pos,
-                       road, mid_point = None, dis_tag = True):
+                       road, next_road, mid_point = None, dis_tag = True):
     
     ego_transform = ego_state.transform
     ego_world_speed = math.sqrt(ego_world_vel['vx'] ** 2 + ego_world_vel['vy'] ** 2)
@@ -333,17 +333,16 @@ def calculate_measures(state_list, ego_state, isNpcVehicle, ego_world_vel, agent
         # Calculate LoSD
         loSD = 100000
 
-        if (ego_world_vel['x'] * agent_world_vel[i]['x'] > 0) {
+        if ego_world_vel['x'] * agent_world_vel[i]['x'] > 0:
             if ego_world_vel['x'] * (ego_world_pos['x'] - agent_world_pos[i]['x']) < 0:
                 loSD = 1 / 2 * (
                     abs(pow(ego_world_vel['x'], 2) / ego_world_acc['x'] - pow(agent_world_vel[i]['x'], 2) / agent_world_acc['x'])) + ego_world_vel['x'] * reaction_time + 5
             else: 
                 loSD = 1 / 2 * (
                     abs(pow(ego_world_vel['x'], 2) / ego_world_acc['x'] - pow(agent_world_vel[i]['x'], 2) / agent_world_acc['x'])) + agent_world_vel[i]['x'] * reaction_time + 5
-        } else {
+        else:
             loSD = 1 / 2 * (
                 abs(pow(ego_world_vel['x'], 2) / ego_world_acc['x'] + pow(agent_world_vel[i]['x'], 2) / agent_world_acc['x'])) + ego_world_vel['x'] + agent_world_vel[i]['x'] + 5
-        }
         
         loProC = calculate_collision_probability(loSD, abs(ego_world_pos['x'] - agent_world_pos[i]['x']))
         loVioRate = calculate_violation_rate(loSD, abs(ego_world_pos['x'] - agent_world_pos[i]['x']))
@@ -366,17 +365,17 @@ def calculate_measures(state_list, ego_state, isNpcVehicle, ego_world_vel, agent
         
         laSD = 1000000
         
-        if (ego_world_vel['y'] * agent_world_vel[i]['y'] > 0) {
+        if ego_world_vel['y'] * agent_world_vel[i]['y'] > 0:
             if ego_world_vel['y'] * (ego_world_pos['y'] - agent_world_pos[i]['y']) < 0:
                 laSD = 1 / 2 * (
                     abs(pow(ego_world_vel['y'], 2) / ego_world_acc['y'] - pow(agent_world_vel[i]['y'], 2) / agent_world_acc['y'])) + ego_world_vel['y'] * reaction_time + 5
             else:
                 laSD = 1 / 2 * (
                     abs(pow(ego_world_vel['y'], 2) / ego_world_acc['y'] - pow(agent_world_vel[i]['y'], 2) / agent_world_acc['y'])) + agent_world_vel[i]['y'] * reaction_time + 5
-        } else {
+        else:
             laSD = 1 / 2 * (
                 abs(pow(ego_world_vel['y'], 2) / ego_world_acc['y'] + pow(agent_world_vel[i]['y'], 2) / agent_world_acc['y'])) + ego_world_vel['y'] + agent_world_vel[i]['y'] + 5
-        }
+
         laProC = calculate_collision_probability(laSD, abs(ego_world_pos['y'] - agent_world_pos[i]['y']))
         laVioRate = calculate_violation_rate(laSD, abs(ego_world_pos['y'] - agent_world_pos[i]['y']))
         laProC_list.append(laProC)
