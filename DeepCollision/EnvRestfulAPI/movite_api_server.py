@@ -10,7 +10,7 @@ import lgsvl
 import numpy as np
 import pickle
 from ScenarioCollector.createUtils import *
-from collision_utils_origin_modified import pedestrian, npc_vehicle, calculate_measures
+from collision_utils_origin import pedestrian, npc_vehicle, calculate_measures
 import math
 import threading
 from lgsvl.agent import NpcVehicle
@@ -36,7 +36,7 @@ app.config['PERMANENT_SESSION_LIFETIME'] = timedelta(days=7)
 # create simulator
 
 sim = lgsvl.Simulator(os.environ.get(
-    "SIMUSaveStateLATOR_HOST", "112.137.129.158"), 8977)
+    "SIMUSaveStateLATOR_HOST", "localhost"), 8988)
 
 # init variable
  
@@ -288,22 +288,21 @@ def calculate_metrics(agents, ego):
             
             isNpc = (isinstance(agents[j], NpcVehicle))
             isNpcVehicle.append(isNpc)
-            if (prev_agent_speed == None) {
-                agent_sim_acc.append(state.speed / 0.5)
+            if prev_agent_speed == None:
+                agent_sim_acc.append(state_.speed / 0.5)
                 prev_agent_speed = {}
-            } else {
-                agent_sim_acc.append((state.speed - prev_agent_speed[agents[i].uid]) / 0.5)
-            }
+            else:
+                agent_sim_acc.append((state_.speed - prev_agent_speed[agents[i].uid]) / 0.5)
             
-            prev_agent_speed[agents[i].uid] = state.speed
+            prev_agent_speed[agents[i].uid] = state_.speed
 
         ego_state = ego.state
         ego_sim_acc = None
-        if (prev_ego_speed == None) {
+        if prev_ego_speed == None:
             ego_sim_acc = ego_state.speed / 0.5
-        } else {
+        else:
             ego_sim_acc = (ego_state.speed - prev_ego_speed) / 0.5
-        }
+            
         transform_ego = lgsvl.Transform(
             lgsvl.Vector(
                 ego_state.velocity.x, 
@@ -326,7 +325,7 @@ def calculate_metrics(agents, ego):
             lgsvl.Vector(0, 0, 0)
         )
         gps_ego = sim.map_to_gps(transform_ego)
-        ego_wolrd_pos = {
+        ego_world_pos = {
             'x': gps_ego.easting,
             'y': gps_ego.northing
         }
@@ -1231,21 +1230,19 @@ def get_environment_state():
     
     # calculate road direction
     
-    print(local_info['position']['x'], ' ', local_info['position']['y'])
-    
     for lane in control_info["lane_arr"]:
         id = control_info["lane_arr"][lane]
         # print(lanes_map[id][0], lanes_map[id][-1])
         
-        if ((lanes_map[id][0]['x'] <= local_info['position']['x'] and local_info['position']['x'] <= lanes_map[id][-1]['x']) 
-        or (lanes_map[id][0]['x'] >= local_info['position']['x'] and local_info['position']['x'] >= lanes_map[id][-1]['x'])):
-            if ((lanes_map[id][0]['y'] <= local_info['position']['y'] and local_info['position']['y'] <= lanes_map[id][-1]['y'])
-            or (lanes_map[id][0]['y'] >= local_info['position']['y'] and local_info['position']['y'] >= lanes_map[id][-1]['y'])):
+        if ((lanes_map[id][0]['x'] <= control_info['last_point']['x'] and control_info['last_point']['x'] <= lanes_map[id][-1]['x']) 
+        or (lanes_map[id][0]['x'] >= control_info['last_point']['x'] and control_info['last_point']['x'] >= lanes_map[id][-1]['x'])):
+            if ((lanes_map[id][0]['y'] <= control_info['last_point']['y'] and control_info['last_point']['y'] <= lanes_map[id][-1]['y'])
+            or (lanes_map[id][0]['y'] >= control_info['last_point']['y'] and control_info['last_point']['y'] >= lanes_map[id][-1]['y'])):
                 current_lane = id
                 cnt = 0
                 dis = 100000000
                 for i in range(0, len(lanes_map[id]) - 1):
-                    cur_dis = cal_dis(local_info['position']['x'], local_info['position']['y'], 0, lanes_map[id][i]['x'], lanes_map[id][i]['y'], 0)
+                    cur_dis = cal_dis(control_info['last_point']['x'], control_info['last_point']['y'], 0, lanes_map[id][i]['x'], lanes_map[id][i]['y'], 0)
                     if cur_dis < dis:
                         dis = cur_dis
                         lane_waypoint['point_f'] = {
@@ -1259,6 +1256,7 @@ def get_environment_state():
                         }
                         
     print(lane_waypoint)
+
     
 
     # Specify the mid point between localization's position and simulator ego's position
