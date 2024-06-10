@@ -180,6 +180,44 @@ def judge_same_line(a1_position, a1_speed, a1_velocity, a2_position, a2_speed, k
 
     return judge, ego_ahead, TTC
 
+def judge_condition(state_list, ego_state, brake_percentage, ego_world_vel, agent_world_vel, 
+                       ego_sim_acc, ego_world_pos, agent_world_pos, road):
+    ego_transform = ego_state.transform
+    ego_position = np.array([ego_transform.position.x, ego_transform.position.y, ego_transform.position.z])
+    ego_velocity = np.array([ego_state.velocity.x, ego_state.velocity.y, ego_state.velocity.z])
+    ego_world_speed =  math.sqrt(ego_world_vel['x']**2 + ego_world_vel['y']**2)
+
+    trajectory_ego_k, trajectory_ego_b = get_line(ego_position, ego_velocity)
+    #Passing 0, Lane Changing 1, Turning 2, Braking 3, Speeding 4, Cruising 5 
+    condition = [0, 0, 0, 0 , 0, 0]
+    
+    #Check braking
+    if brake_percentage >= 40:
+        condition[3] = 1
+    #Check Speeding
+    if ego_sim_acc > 0: 
+        condition[4] = 1
+    #Check Passing
+    for i in range(0, len(state_list)):
+        transform = state_list[i].transform
+        state = state_list[i]
+        a_position = np.array([transform.position.x, transform.position.y, transform.position.z])
+        a_velocity = np.array([state.velocity.x, state.velocity.y, state.velocity.z])
+        trajectory_agent_k, trajectory_agent_b = get_line(a_position, a_velocity)
+        agent_world_speed = math.sqrt(agent_world_vel[i]['x'] ** 2 + agent_world_vel[i]['y'] ** 2)
+        ego_diff = ego_velocity - ego_position
+        agent_diff = a_velocity - a_position
+        if (abs(trajectory_ego_k - trajectory_agent_k) < 0.01) and np.dot(ego_diff, agent_diff) > 0  and  (ego_world_speed > agent_world_speed) and (ego_sim_acc > 0):
+            condition[0] = 1
+    
+    #Check Lane Changing
+        new_ego_pos = ego_velocity + ego_position
+        
+
+    if (not sum(condition)): 
+        condition[5] = 1
+    return condition
+
 
 def calculate_TTC(agents, ego, dis_tag):
     ego_transform = ego.transform
@@ -299,7 +337,7 @@ def calculate_measures(state_list, ego_state, isNpcVehicle, ego_world_vel, agent
             if ego_world_vel['x'] * (ego_world_pos['x'] - agent_world_pos[i]['x']) < 0:
                 loSD = 1 / 2 * (
                     abs(pow(ego_world_vel['x'], 2) / ego_world_acc['x'] - pow(agent_world_vel[i]['x'], 2) / agent_world_acc['x'])) + ego_world_vel['x'] * reaction_time + 5
-            else:
+            else: 
                 loSD = 1 / 2 * (
                     abs(pow(ego_world_vel['x'], 2) / ego_world_acc['x'] - pow(agent_world_vel[i]['x'], 2) / agent_world_acc['x'])) + agent_world_vel[i]['x'] * reaction_time + 5
         } else {
