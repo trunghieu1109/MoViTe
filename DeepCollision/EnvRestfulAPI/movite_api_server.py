@@ -10,7 +10,7 @@ import lgsvl
 import numpy as np
 import pickle
 from ScenarioCollector.createUtils import *
-from collision_utils_origin import pedestrian, npc_vehicle, calculate_measures
+from collision_utils_origin_modified import pedestrian, npc_vehicle, calculate_measures
 import math
 import threading
 from lgsvl.agent import NpcVehicle
@@ -84,8 +84,7 @@ next_lane_waypoint = {
     }
 }
 
-prev_ego_speed = None
-prev_agent_speed = None
+current_signals = {}
 
 speed_list = []
 
@@ -113,6 +112,12 @@ lanes_map = None
 
 with open(lanes_map_file, "rb") as file:
     lanes_map = pickle.load(file)
+    
+signals_map_file = "tartu_signals.pkl"
+signals_map = None
+
+with open(signals_map_file, "rb") as file:
+    signals_map = pickle.load(file)
 
 
 # on collision callback function
@@ -208,13 +213,12 @@ def get_type(class_name):
 
 def calculate_measures_thread(state_list, ego_state, isNpcVehicle, TTC_list,
                               distance_list, probability_list, ego_world_vel, agent_world_vel,
-                              ego_sim_acc, agent_sim_acc, ego_world_pos, agent_world_pos,
+                              ego_world_pos, agent_world_pos,
                               road, next_road, mid_point=None, collision_tag_=False):
 
     TTC, distance, probability2 = calculate_measures(
         state_list, ego_state, isNpcVehicle,
         ego_world_vel, agent_world_vel,
-        ego_sim_acc, agent_sim_acc,
         ego_world_pos, agent_world_pos,
         road, next_road, mid_point, True)
 
@@ -242,8 +246,6 @@ def calculate_metrics(agents, ego):
     global collision_uid
     global lane_waypoint
     global next_lane_waypoint
-    global prev_agent_speed
-    global prev_ego_speed
 
     collision_object = None
     collision_speed = 0  # 0 indicates there is no collision occurred.
@@ -312,21 +314,9 @@ def calculate_metrics(agents, ego):
 
             isNpc = (isinstance(agents[j], NpcVehicle))
             isNpcVehicle.append(isNpc)
-            if prev_agent_speed == None:
-                agent_sim_acc.append(state_.speed / 0.5)
-                prev_agent_speed = {}
-            else:
-                agent_sim_acc.append(
-                    (state_.speed - prev_agent_speed[agents[i].uid]) / 0.5)
-
-            prev_agent_speed[agents[i].uid] = state_.speed
+            
 
         ego_state = ego.state
-        ego_sim_acc = None
-        if prev_ego_speed == None:
-            ego_sim_acc = ego_state.speed / 0.5
-        else:
-            ego_sim_acc = (ego_state.speed - prev_ego_speed) / 0.5
 
         transform_ego = lgsvl.Transform(
             lgsvl.Vector(
@@ -370,7 +360,6 @@ def calculate_metrics(agents, ego):
             args=(state_list, ego_state, isNpcVehicle, TTC_list,
                   distance_list, probability_list,
                   ego_world_vel, agent_world_vel,
-                  ego_sim_acc, agent_sim_acc,
                   ego_world_pos, agent_world_pos,
                   road, next_road, MID_POINT, collision_tag,)
         )
@@ -474,10 +463,7 @@ def load_scene():
     global sensors
     global EGO
     global ROAD
-    global prev_agent_speed
-    global prev_ego_speed
-    prev_agent_speed = None
-    prev_ego_speed = None
+
     print('obTime: ', observation_time)
     scene = str(request.args.get('scene'))
     road_num = str(request.args.get('road_num'))
@@ -1171,13 +1157,16 @@ def get_apollo_msg():
     local_info = data["local_info"]
     pred_info = data["pred_info"]
     per_info = data["per_info"]
+    tlight_info = data["tlight_info"]
 
-    return local_info, per_info, pred_info, control_info
+    return local_info, per_info, pred_info, control_info, tlight_info
 
 
 def cal_dis(x_a, y_a, z_a, x_b, y_b, z_b):
     return math.sqrt((x_a - x_b) ** 2 + (y_a - y_b) ** 2 + (z_a - z_b) ** 2)
 
+def cal_dis_2d(x_a, y_a, x_b, y_b):
+    return math.sqrt((x_a - x_b) ** 2 + (y_a - y_b) ** 2)
 
 @app.route('/LGSVL/Status/Environment/State', methods=['GET'])
 def get_environment_state():
@@ -1186,6 +1175,8 @@ def get_environment_state():
     global current_lane
     global lane_waypoint
     global next_lane_waypoint
+    global current_signals
+    global signals_map
 
     agents = sim.get_agents()
 
@@ -1233,7 +1224,7 @@ def get_environment_state():
             dist_to_max_speed_obs = dis_to_ego
 
     # get apollo info
-    local_info, per_info, pred_info, control_info = get_apollo_msg()
+    local_info, per_info, pred_info, control_info, tlight_info = get_apollo_msg()
 
     # transform ego's position to world coordinate position
     transform = lgsvl.Transform(
@@ -1257,9 +1248,36 @@ def get_environment_state():
     ])
 
     local_diff = np.linalg.norm(vector_local - vector_avut)
+                        
+    # Specify the mid point between localization's position and simulator ego's position
 
-    # calculate road direction
+    vector_mid = np.array([
+        (vector_avut[0] + vector_local[0]) / 2,
+        (vector_avut[1] + vector_local[1]) / 2
+    ])
 
+    gps2 = sim.map_from_gps(
+        None, None, vector_mid[1], vector_mid[0], None, None)
+
+    MID_POINT = np.array([
+        gps2.position.x,
+        gps2.position.y,
+        gps2.position.z
+    ])
+
+    # Calculate the angle of lcoalization's position and simulator ego's position
+
+    v_x = vector_local[0] - vector_avut[0]
+    v_y = vector_local[1] - vector_avut[1]
+
+    local_angle = math.atan2(v_y, v_x)
+
+    if v_x < 0:
+        local_angle += math.pi
+        
+        # calculate road direction
+    
+    # current lane direction
     for lane in control_info["lane_arr"]:
         id = control_info["lane_arr"][lane]
         # print(lanes_map[id][0], lanes_map[id][-1])
@@ -1286,8 +1304,7 @@ def get_environment_state():
                             'y': lanes_map[id][i + 1]['y']
                         }
 
-    print(lane_waypoint)
-
+    # next 3s lane direction
     for lane in control_info["lane_arr"]:
         id = control_info["lane_arr"][lane]
         # print(lanes_map[id][0], lanes_map[id][-1])
@@ -1313,34 +1330,25 @@ def get_environment_state():
                             'x': lanes_map[id][i + 1]['x'],
                             'y': lanes_map[id][i + 1]['y']
                         }
+    
+    cnt = 0
+     
+    for tlight in tlight_info:
+        id = tlight_info[tlight]['id']
+        signal_info = signals_map[id]
+        
+        nearest_boundary_point = {}
+        nearest_distance_boundary = 1000000
+        
+        tf_obj = {
+            'id': tlight_info[tlight]['id'],
+            'color': tlight_info[tlight]['color'],
+            'stop_line': signal_info['stop_line']
+        }
+        print(tf_obj)
+        current_signals[str(cnt)] = tf_obj
+        cnt += 1
 
-    print(next_lane_waypoint)
-
-    # Specify the mid point between localization's position and simulator ego's position
-
-    vector_mid = np.array([
-        (vector_avut[0] + vector_local[0]) / 2,
-        (vector_avut[1] + vector_local[1]) / 2
-    ])
-
-    gps2 = sim.map_from_gps(
-        None, None, vector_mid[1], vector_mid[0], None, None)
-
-    MID_POINT = np.array([
-        gps2.position.x,
-        gps2.position.y,
-        gps2.position.z
-    ])
-
-    # Calculate the angle of lcoalization's position and simulator ego's position
-
-    v_x = vector_local[0] - vector_avut[0]
-    v_y = vector_local[1] - vector_avut[1]
-
-    local_angle = math.atan2(v_y, v_x)
-
-    if v_x < 0:
-        local_angle += math.pi
 
     # state_dict = {'x': position.x, 'y': position.y, 'z': position.z,
     #               'rx': rotation.x, 'ry': rotation.y, 'rz': rotation.z,
