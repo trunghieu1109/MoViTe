@@ -296,7 +296,7 @@ def get_world_acc(world_speed, sim_speed, sim_acc, coord, world_vel):
 
 # @jit(nopython=True, fastmath=True)
 def calculate_measures(state_list, ego_state, isNpcVehicle, ego_world_vel, agent_world_vel, 
-                       ego_world_pos, agent_world_pos,
+                       ego_world_pos, agent_world_pos, current_signals,
                        road, next_road, mid_point = None, dis_tag = True):
     
     ego_transform = ego_state.transform

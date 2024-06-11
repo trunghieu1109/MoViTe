@@ -213,13 +213,13 @@ def get_type(class_name):
 
 def calculate_measures_thread(state_list, ego_state, isNpcVehicle, TTC_list,
                               distance_list, probability_list, ego_world_vel, agent_world_vel,
-                              ego_world_pos, agent_world_pos,
+                              ego_world_pos, agent_world_pos, current_signals,
                               road, next_road, mid_point=None, collision_tag_=False):
 
     TTC, distance, probability2 = calculate_measures(
         state_list, ego_state, isNpcVehicle,
         ego_world_vel, agent_world_vel,
-        ego_world_pos, agent_world_pos,
+        ego_world_pos, agent_world_pos, current_signals,
         road, next_road, mid_point, True)
 
     TTC_list.append(round(TTC, 6))
@@ -360,7 +360,7 @@ def calculate_metrics(agents, ego):
             args=(state_list, ego_state, isNpcVehicle, TTC_list,
                   distance_list, probability_list,
                   ego_world_vel, agent_world_vel,
-                  ego_world_pos, agent_world_pos,
+                  ego_world_pos, agent_world_pos, current_signals,
                   road, next_road, MID_POINT, collision_tag,)
         )
 
@@ -1345,7 +1345,6 @@ def get_environment_state():
             'color': tlight_info[tlight]['color'],
             'stop_line': signal_info['stop_line']
         }
-        print(tf_obj)
         current_signals[str(cnt)] = tf_obj
         cnt += 1
 
