@@ -181,7 +181,7 @@ def judge_same_line(a1_position, a1_speed, a1_velocity, a2_position, a2_speed, k
     return judge, ego_ahead, TTC
 
 def judge_condition(state_list, ego_state, brake_percentage, ego_world_vel, agent_world_vel, 
-                       ego_world_acc, ego_world_pos, agent_world_pos, road, next_road):
+                       ego_world_acc, road, next_road, current_signals):
     ego_transform = ego_state.transform
     ego_position = np.array([ego_transform.position.x, ego_transform.position.y, ego_transform.position.z])
     ego_velocity = np.array([ego_state.velocity.x, ego_state.velocity.y, ego_state.velocity.z])
@@ -218,6 +218,13 @@ def judge_condition(state_list, ego_state, brake_percentage, ego_world_vel, agen
             condition[2] = 1
         elif (road['lane_id'] != next_road['lane_id']):
             condition[1] = 1
+    #Check signal
+    for signal in current_signals:
+        if signal['color'] == 1:
+            signal_dist = abs(ego_position[0] * signal['a'] + ego_position[2] * signal['b'] + signal['c']) / math.sqrt(signal['a']**2 + signal['b']**2)
+            if (signal_dist <= 5):
+                condition[5] = 1
+                
 
     if (not sum(condition)): 
         condition[5] = 1
