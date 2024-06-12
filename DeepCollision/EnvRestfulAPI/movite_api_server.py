@@ -9,7 +9,7 @@ import json
 import lgsvl
 import numpy as np
 import pickle
-from ScenarioCollector.createUtils import *
+# from ScenarioCollector.createUtils import *
 from collision_utils_origin_modified import pedestrian, npc_vehicle, calculate_measures
 import math
 import threading
@@ -61,26 +61,29 @@ CONTROL = False
 NPC_QUEUE = queue.Queue(maxsize=10)
 collision_speed = 0  # 0 indicates there is no collision occurred.
 collision_uid = "No collision"
-current_lane = ""
 lane_waypoint = {
     'point_f': {
         'x': 0,
-        'y': 0
+        'y': 0,
+        'z': 0
     },
     'point_l': {
         'x': 0,
-        'y': 0
+        'y': 0,
+        'z': 0
     }
 }
 
 next_lane_waypoint = {
     'point_f': {
         'x': 0,
-        'y': 0
+        'y': 0,
+        'z': 0
     },
     'point_l': {
         'x': 0,
-        'y': 0
+        'y': 0,
+        'z': 0
     }
 }
 
@@ -118,6 +121,12 @@ signals_map = None
 
 with open(signals_map_file, "rb") as file:
     signals_map = pickle.load(file)
+    
+signals_params = {}
+
+vioRate = 0
+
+prev_tlight_sign = {}
 
 
 # on collision callback function
@@ -211,16 +220,22 @@ def get_type(class_name):
 # calculate measures thread, use in multi-thread
 
 
-def calculate_measures_thread(state_list, ego_state, isNpcVehicle, TTC_list,
-                              distance_list, probability_list, ego_world_vel, agent_world_vel,
-                              ego_world_pos, agent_world_pos, current_signals,
-                              road, next_road, mid_point=None, collision_tag_=False):
+def calculate_measures_thread(state_list, ego_state, isNpcVehicle, TTC_list, vioRate_list,
+                              distance_list, probability_list, current_signals, ego_curr_acc, brake_percentage,
+                              road, next_road, prev_tlight_sign_, mid_point=None, collision_tag_=False):
 
-    TTC, distance, probability2 = calculate_measures(
-        state_list, ego_state, isNpcVehicle,
-        ego_world_vel, agent_world_vel,
-        ego_world_pos, agent_world_pos, current_signals,
-        road, next_road, mid_point, True)
+    p_tlight_sign = prev_tlight_sign_
+    
+    print(prev_tlight_sign_)
+
+    TTC, distance, probability2, vioRate, tlight_sign = calculate_measures(
+        state_list, ego_state, isNpcVehicle, current_signals, ego_curr_acc, brake_percentage,
+        road, next_road, p_tlight_sign, mid_point, True)
+
+    prev_tlight_sign_ = tlight_sign
+    
+    print(prev_tlight_sign_)
+    
 
     TTC_list.append(round(TTC, 6))
 
@@ -228,6 +243,8 @@ def calculate_measures_thread(state_list, ego_state, isNpcVehicle, TTC_list,
     if collision_tag_:
         probability2 = 1
     probability_list.append(round(probability2, 6))
+    
+    vioRate_list.append(vioRate)
 
 # calculate metrics
 
@@ -246,6 +263,8 @@ def calculate_metrics(agents, ego):
     global collision_uid
     global lane_waypoint
     global next_lane_waypoint
+    global vioRate
+    global prev_tlight_sign
 
     collision_object = None
     collision_speed = 0  # 0 indicates there is no collision occurred.
@@ -258,6 +277,7 @@ def calculate_metrics(agents, ego):
     TTC_list = []
     distance_list = []
     probability_list = []
+    vioRate_list = []
     i = 0
     time_step = 0.5
     speed = 0
@@ -276,92 +296,47 @@ def calculate_metrics(agents, ego):
             create_story_by_timestamp(i + 1, doc, story, entities, agents, sim)
 
         sim.run(time_limit=time_step)  # , time_scale=2
+        
+        # print("Simulator run in 0.5s")
+        
+        ego_curr_acc, brake_percentage = get_sub_state()
+        
+        # print("Ego current acc: ", ego_curr_acc)
+        
+        # print("Ego Position: ", ego.state.transform.position)
 
         state_list = []
-        agent_world_vel = []
-        cur_agent_speed = {}
-        agent_sim_acc = []
-        agent_world_pos = []
         isNpcVehicle = []
         for j in range(1, len(agents)):
             state_ = agents[j].state
             state_list.append(state_)
-            transform = lgsvl.Transform(
-                lgsvl.Vector(
-                    state_.velocity.x,
-                    state_.velocity.y,
-                    state_.velocity.z),
-                lgsvl.Vector(0, 0, 0)
-            )
-            gps = sim.map_to_gps(transform)
-            agent_world_vel.append({
-                'vx': gps.easting,
-                'vy': gps.northing
-            })
-
-            transform = lgsvl.Transform(
-                lgsvl.Vector(
-                    state_.transform.position.x,
-                    state_.transform.position.y,
-                    state_.transform.position.z),
-                lgsvl.Vector(0, 0, 0)
-            )
-            gps = sim.map_to_gps(transform)
-            agent_world_pos.append({
-                'x': gps.easting,
-                'y': gps.northing
-            })
-
             isNpc = (isinstance(agents[j], NpcVehicle))
             isNpcVehicle.append(isNpc)
-            
 
         ego_state = ego.state
 
-        transform_ego = lgsvl.Transform(
-            lgsvl.Vector(
-                ego_state.velocity.x,
-                ego_state.velocity.y,
-                ego_state.velocity.z),
-            lgsvl.Vector(0, 0, 0)
-        )
-        gps_ego = sim.map_to_gps(transform_ego)
-
-        ego_world_vel = {
-            'vx': gps_ego.easting,
-            'vy': gps_ego.northing
-        }
-
-        transform_ego = lgsvl.Transform(
-            lgsvl.Vector(
-                ego_state.transform.position.x,
-                ego_state.transform.position.y,
-                ego_state.transform.position.z),
-            lgsvl.Vector(0, 0, 0)
-        )
-        gps_ego = sim.map_to_gps(transform_ego)
-        ego_world_pos = {
-            'x': gps_ego.easting,
-            'y': gps_ego.northing
-        }
-
         road = {
             'x': lane_waypoint['point_l']['x'] - lane_waypoint['point_f']['x'],
-            'y': lane_waypoint['point_l']['y'] - lane_waypoint['point_f']['y']
+            'y': lane_waypoint['point_l']['y'] - lane_waypoint['point_f']['y'],
+            'z': lane_waypoint['point_l']['z'] - lane_waypoint['point_f']['z'],
+            'lane_id': lane_waypoint['lane_id']
         }
         
         next_road = {
             'x': next_lane_waypoint['point_l']['x'] - next_lane_waypoint['point_f']['x'],
-            'y': next_lane_waypoint['point_l']['y'] - next_lane_waypoint['point_f']['y']
+            'y': next_lane_waypoint['point_l']['y'] - next_lane_waypoint['point_f']['y'],
+            'z': next_lane_waypoint['point_l']['z'] - next_lane_waypoint['point_f']['z'],
+            'lane_id': next_lane_waypoint['lane_id']
         }
+        
+        # print("Road direction: ", road)
+        # print("Next Road direction: ", next_road)
 
         thread = threading.Thread(
             target=calculate_measures_thread,
-            args=(state_list, ego_state, isNpcVehicle, TTC_list,
-                  distance_list, probability_list,
-                  ego_world_vel, agent_world_vel,
-                  ego_world_pos, agent_world_pos, current_signals,
-                  road, next_road, MID_POINT, collision_tag,)
+            args=(state_list, ego_state, isNpcVehicle, TTC_list, vioRate_list,
+                  distance_list, probability_list, current_signals, ego_curr_acc, 
+                  brake_percentage, road, next_road, prev_tlight_sign, MID_POINT, collision_tag,)
         )
 
         thread.start()
@@ -394,10 +369,12 @@ def calculate_metrics(agents, ego):
         doc.writexml(fp, addindent='\t', newl='\n', encoding="utf-8")
 
     print("Probability List: ", probability_list)
-
+    print("Violation Rate List: ", vioRate_list)
+    
     probability = round(max(probability_list), 6)
+    vioRate = round(max(vioRate_list), 6)
     return {'TTC': TTC_list, 'distance': distance_list, 'collision_type': collision_type, 'collision_uid': collision_uid_,
-            'collision_speed': collision_speed_, 'probability': probability_list}  # 'uncomfortable': uncomfortable,
+            'collision_speed': collision_speed_, 'probability': probability_list, 'vioRate': vioRate_list}  # 'uncomfortable': uncomfortable,
 
 
 @app.route('/LGSVL')
@@ -463,6 +440,8 @@ def load_scene():
     global sensors
     global EGO
     global ROAD
+    global prev_tlight_sign
+    prev_tlight_sign = {}
 
     print('obTime: ', observation_time)
     scene = str(request.args.get('scene'))
@@ -1144,6 +1123,16 @@ def interpreter_signal(signal_state):
         code = 1
     return code
 
+def get_line(point_a, point_b):
+    a = (point_a['z'] - point_b['z'])
+    b = (point_a['x'] - point_b['x'])
+    c = - point_a['x'] * a - point_a['z'] * b
+    
+    return {
+        'a': a,
+        'b': b,
+        'c': c
+    }
 
 def get_apollo_msg():
     global msg_socket
@@ -1161,6 +1150,27 @@ def get_apollo_msg():
 
     return local_info, per_info, pred_info, control_info, tlight_info
 
+def get_apollo_sub_msg():
+    global msg_socket
+
+    msg_socket.send(json.dumps(["start_getting_sub_data"]).encode("utf-8"))
+    data = msg_socket.recv(2048)
+
+    data = json.loads(data.decode("utf-8"))
+
+    control_info = data["control_info"]
+    local_info = data["local_info"]
+    tlight_info = data["tlight_info"]
+    chassis_info = data["chassis_info"]
+    
+    # print("Get Apollo Sub Message")
+    
+    # print("Traffic light info: ", tlight_info)
+    # print("Control info: ", control_info)
+    # print("Chassis info: ", chassis_info)
+
+    return local_info, control_info, tlight_info, chassis_info
+
 
 def cal_dis(x_a, y_a, z_a, x_b, y_b, z_b):
     return math.sqrt((x_a - x_b) ** 2 + (y_a - y_b) ** 2 + (z_a - z_b) ** 2)
@@ -1172,7 +1182,6 @@ def cal_dis_2d(x_a, y_a, x_b, y_b):
 def get_environment_state():
     global MID_POINT
     global lanes_map
-    global current_lane
     global lane_waypoint
     global next_lane_waypoint
     global current_signals
@@ -1278,75 +1287,87 @@ def get_environment_state():
         # calculate road direction
     
     # current lane direction
-    for lane in control_info["lane_arr"]:
-        id = control_info["lane_arr"][lane]
-        # print(lanes_map[id][0], lanes_map[id][-1])
+    # for lane in control_info["lane_arr"]:
+    #     id = control_info["lane_arr"][lane]
+    #     # print(lanes_map[id][0], lanes_map[id][-1])
 
-        if ((lanes_map[id][0]['x'] <= local_info['position']['x'] and local_info['position']['x'] <= lanes_map[id][-1]['x'])
-                or (lanes_map[id][0]['x'] >= local_info['position']['x'] and local_info['position']['x'] >= lanes_map[id][-1]['x'])):
-            if ((lanes_map[id][0]['y'] <= local_info['position']['y'] and local_info['position']['y'] <= lanes_map[id][-1]['y'])
-                    or (lanes_map[id][0]['y'] >= local_info['position']['y'] and local_info['position']['y'] >= lanes_map[id][-1]['y'])):
-                current_lane = id
-                cnt = 0
-                dis = 100000000
-                for i in range(0, len(lanes_map[id]) - 1):
-                    cur_dis = cal_dis(local_info['position']['x'], local_info['position']
-                                      ['y'], 0, lanes_map[id][i]['x'], lanes_map[id][i]['y'], 0)
-                    if cur_dis < dis:
-                        dis = cur_dis
-                        lane_waypoint['point_f'] = {
-                            'x': lanes_map[id][i]['x'],
-                            'y': lanes_map[id][i]['y']
-                        }
+    #     if ((lanes_map[id][0]['x'] <= local_info['position']['x'] and local_info['position']['x'] <= lanes_map[id][-1]['x'])
+    #             or (lanes_map[id][0]['x'] >= local_info['position']['x'] and local_info['position']['x'] >= lanes_map[id][-1]['x'])):
+    #         if ((lanes_map[id][0]['y'] <= local_info['position']['y'] and local_info['position']['y'] <= lanes_map[id][-1]['y'])
+    #                 or (lanes_map[id][0]['y'] >= local_info['position']['y'] and local_info['position']['y'] >= lanes_map[id][-1]['y'])):
+    #             cnt = 0
+    #             dis = 100000000
+    #             for i in range(0, len(lanes_map[id]) - 1):
+    #                 cur_dis = cal_dis(local_info['position']['x'], local_info['position']
+    #                                   ['y'], 0, lanes_map[id][i]['x'], lanes_map[id][i]['y'], 0)
+    #                 if cur_dis < dis:
+    #                     dis = cur_dis
+                        
+    #                     gps_waypoint = sim.map_from_gps(None, None, lanes_map[id][i]['y'], lanes_map[id][i]['x'],  None, None)
+                        
+    #                     lane_waypoint['point_f'] = {
+    #                         'x': gps_waypoint.position.x,
+    #                         'y': gps_waypoint.position.y,
+    #                         'z': gps_waypoint.position.z
+    #                     }
+                        
+    #                     gps_waypoint = sim.map_from_gps(None, None, lanes_map[id][i + 1]['y'], lanes_map[id][i + 1]['x'],  None, None)
 
-                        lane_waypoint['point_l'] = {
-                            'x': lanes_map[id][i + 1]['x'],
-                            'y': lanes_map[id][i + 1]['y']
-                        }
+    #                     lane_waypoint['point_l'] = {
+    #                         'x': gps_waypoint.position.x,
+    #                         'y': gps_waypoint.position.y,
+    #                         'z': gps_waypoint.position.z
+    #                     }
 
-    # next 3s lane direction
-    for lane in control_info["lane_arr"]:
-        id = control_info["lane_arr"][lane]
-        # print(lanes_map[id][0], lanes_map[id][-1])
+    # # next 3s lane direction
+    # for lane in control_info["lane_arr"]:
+    #     id = control_info["lane_arr"][lane]
+    #     # print(lanes_map[id][0], lanes_map[id][-1])
 
-        if ((lanes_map[id][0]['x'] <= control_info['last_point']['x'] and control_info['last_point']['x'] <= lanes_map[id][-1]['x'])
-                or (lanes_map[id][0]['x'] >= control_info['last_point']['x'] and control_info['last_point']['x'] >= lanes_map[id][-1]['x'])):
-            if ((lanes_map[id][0]['y'] <= control_info['last_point']['y'] and control_info['last_point']['y'] <= lanes_map[id][-1]['y'])
-                    or (lanes_map[id][0]['y'] >= control_info['last_point']['y'] and control_info['last_point']['y'] >= lanes_map[id][-1]['y'])):
-                current_lane = id
-                cnt = 0
-                dis = 100000000
-                for i in range(0, len(lanes_map[id]) - 1):
-                    cur_dis = cal_dis(control_info['last_point']['x'], control_info['last_point']
-                                      ['y'], 0, lanes_map[id][i]['x'], lanes_map[id][i]['y'], 0)
-                    if cur_dis < dis:
-                        dis = cur_dis
-                        next_lane_waypoint['point_f'] = {
-                            'x': lanes_map[id][i]['x'],
-                            'y': lanes_map[id][i]['y']
-                        }
+    #     if ((lanes_map[id][0]['x'] <= control_info['last_point']['x'] and control_info['last_point']['x'] <= lanes_map[id][-1]['x'])
+    #             or (lanes_map[id][0]['x'] >= control_info['last_point']['x'] and control_info['last_point']['x'] >= lanes_map[id][-1]['x'])):
+    #         if ((lanes_map[id][0]['y'] <= control_info['last_point']['y'] and control_info['last_point']['y'] <= lanes_map[id][-1]['y'])
+    #                 or (lanes_map[id][0]['y'] >= control_info['last_point']['y'] and control_info['last_point']['y'] >= lanes_map[id][-1]['y'])):
+    #             cnt = 0
+    #             dis = 100000000
+    #             for i in range(0, len(lanes_map[id]) - 1):
+    #                 cur_dis = cal_dis(control_info['last_point']['x'], control_info['last_point']
+    #                                   ['y'], 0, lanes_map[id][i]['x'], lanes_map[id][i]['y'], 0)
+    #                 if cur_dis < dis:
+    #                     dis = cur_dis
+                        
+    #                     gps_waypoint = sim.map_from_gps(None, None, lanes_map[id][i]['y'], lanes_map[id][i]['x'],  None, None)
+                        
+    #                     next_lane_waypoint['point_f'] = {
+    #                         'x': gps_waypoint.position.x,
+    #                         'y': gps_waypoint.position.y,
+    #                         'z': gps_waypoint.position.z
+    #                     }
+                        
+    #                     gps_waypoint = sim.map_from_gps(None, None, lanes_map[id][i + 1]['y'], lanes_map[id][i + 1]['x'],  None, None)
 
-                        next_lane_waypoint['point_l'] = {
-                            'x': lanes_map[id][i + 1]['x'],
-                            'y': lanes_map[id][i + 1]['y']
-                        }
+    #                     next_lane_waypoint['point_l'] = {
+    #                         'x': gps_waypoint.position.x,
+    #                         'y': gps_waypoint.position.y,
+    #                         'z': gps_waypoint.position.z
+    #                     }
     
-    cnt = 0
+    # cnt = 0
      
-    for tlight in tlight_info:
-        id = tlight_info[tlight]['id']
-        signal_info = signals_map[id]
+    # for tlight in tlight_info:
+    #     id = tlight_info[tlight]['id']
+    #     signal_info = signals_map[id]
         
-        nearest_boundary_point = {}
-        nearest_distance_boundary = 1000000
+    #     nearest_boundary_point = {}
+    #     nearest_distance_boundary = 1000000
         
-        tf_obj = {
-            'id': tlight_info[tlight]['id'],
-            'color': tlight_info[tlight]['color'],
-            'stop_line': signal_info['stop_line']
-        }
-        current_signals[str(cnt)] = tf_obj
-        cnt += 1
+    #     tf_obj = {
+    #         'id': tlight_info[tlight]['id'],
+    #         'color': tlight_info[tlight]['color'],
+    #         'stop_line': signal_info['stop_line']
+    #     }
+    #     current_signals[str(cnt)] = tf_obj
+    #     cnt += 1
 
 
     # state_dict = {'x': position.x, 'y': position.y, 'z': position.z,
@@ -1446,6 +1467,169 @@ def get_environment_state():
     #               'rain': weather.rain, 'fog': weather.fog, 'wetness': weather.wetness,
     #               'timeofday': sim.time_of_day, 'signal': interpreter_signal(signal.current_state)}
     return json.dumps(state_dict)
+
+def get_sub_state():
+    global lanes_map
+    global lane_waypoint
+    global next_lane_waypoint
+    global current_signals
+    global signals_map
+    global signals_params
+    current_signals = {}
+    lane_waypoint = {
+        'point_f': {
+            'x': 0,
+            'y': 0,
+            'z': 0
+        },
+        'point_l': {
+            'x': 0,
+            'y': 0,
+            'z': 0
+        },
+        'lane_id': ""
+    }
+
+    next_lane_waypoint = {
+        'point_f': {
+            'x': 0,
+            'y': 0,
+            'z': 0
+        },
+        'point_l': {
+            'x': 0,
+            'y': 0,
+            'z': 0
+        },
+        'lane_id': ""
+    }
+
+    # get apollo info
+    local_info, control_info, tlight_info, chassis_info = get_apollo_sub_msg()
+    brake_percentage = chassis_info['brake_percentage']
+    
+    # print("Lane arr: ", control_info["lane_arr"])
+    
+    # calculate road direction
+    
+    # current lane direction
+    for lane in control_info["lane_arr"]:
+        id = control_info["lane_arr"][lane]
+        # print(lanes_map[id][0], lanes_map[id][-1])
+
+        if ((lanes_map[id][0]['x'] <= local_info['position']['x'] and local_info['position']['x'] <= lanes_map[id][-1]['x'])
+                or (lanes_map[id][0]['x'] >= local_info['position']['x'] and local_info['position']['x'] >= lanes_map[id][-1]['x'])):
+            if ((lanes_map[id][0]['y'] <= local_info['position']['y'] and local_info['position']['y'] <= lanes_map[id][-1]['y'])
+                    or (lanes_map[id][0]['y'] >= local_info['position']['y'] and local_info['position']['y'] >= lanes_map[id][-1]['y'])):
+                cnt = 0
+                dis = 100000000
+                for i in range(0, len(lanes_map[id]) - 1):
+                    cur_dis = cal_dis(local_info['position']['x'], local_info['position']
+                                      ['y'], 0, lanes_map[id][i]['x'], lanes_map[id][i]['y'], 0)
+                    if cur_dis < dis:
+                        # print("update lane waypoint")
+                        dis = cur_dis
+                        
+                        gps_waypoint = sim.map_from_gps(None, None, lanes_map[id][i]['y'], lanes_map[id][i]['x'],  None, None)
+                        
+                        lane_waypoint['point_f'] = {
+                            'x': gps_waypoint.position.x,
+                            'y': gps_waypoint.position.y,
+                            'z': gps_waypoint.position.z
+                        }
+                        
+                        gps_waypoint = sim.map_from_gps(None, None, lanes_map[id][i + 1]['y'], lanes_map[id][i + 1]['x'],  None, None)
+
+                        lane_waypoint['point_l'] = {
+                            'x': gps_waypoint.position.x,
+                            'y': gps_waypoint.position.y,
+                            'z': gps_waypoint.position.z
+                        }
+                        
+                        lane_waypoint['lane_id'] = id
+                        
+    # print("Current lane waypoint: ", lane_waypoint)
+
+    # next 3s lane direction
+    for lane in control_info["lane_arr"]:
+        id = control_info["lane_arr"][lane]
+        # print(lanes_map[id][0], lanes_map[id][-1])
+        
+        # print(control_info['last_point'])
+
+        if ((lanes_map[id][0]['x'] <= control_info['last_point']['x'] and control_info['last_point']['x'] <= lanes_map[id][-1]['x'])
+                or (lanes_map[id][0]['x'] >= control_info['last_point']['x'] and control_info['last_point']['x'] >= lanes_map[id][-1]['x'])):
+            if ((lanes_map[id][0]['y'] <= control_info['last_point']['y'] and control_info['last_point']['y'] <= lanes_map[id][-1]['y'])
+                    or (lanes_map[id][0]['y'] >= control_info['last_point']['y'] and control_info['last_point']['y'] >= lanes_map[id][-1]['y'])):
+                cnt = 0
+                dis = 100000000
+                for i in range(0, len(lanes_map[id]) - 1):
+                    cur_dis = cal_dis(control_info['last_point']['x'], control_info['last_point']
+                                      ['y'], 0, lanes_map[id][i]['x'], lanes_map[id][i]['y'], 0)
+                    if cur_dis < dis:
+                        # print("update lane waypoint")
+                        
+                        dis = cur_dis
+                        
+                        gps_waypoint = sim.map_from_gps(None, None, lanes_map[id][i]['y'], lanes_map[id][i]['x'],  None, None)
+                        
+                        next_lane_waypoint['point_f'] = {
+                            'x': gps_waypoint.position.x,
+                            'y': gps_waypoint.position.y,
+                            'z': gps_waypoint.position.z
+                        }
+                        
+                        gps_waypoint = sim.map_from_gps(None, None, lanes_map[id][i + 1]['y'], lanes_map[id][i + 1]['x'],  None, None)
+
+                        next_lane_waypoint['point_l'] = {
+                            'x': gps_waypoint.position.x,
+                            'y': gps_waypoint.position.y,
+                            'z': gps_waypoint.position.z
+                        }
+                        
+                        next_lane_waypoint['lane_id'] = id
+    
+    # print("Next lane waypoint: ", next_lane_waypoint)
+    
+    cnt = 0
+     
+    for tlight in tlight_info:
+        id = tlight_info[tlight]['id']
+        signal_info = signals_map[id]
+        
+        if not (id in signals_params):
+            
+            gps_point = sim.map_from_gps(None, None, signal_info['stop_line'][0]['first_point']['y'], signal_info['stop_line'][0]['first_point']['x'],  None, None)
+                        
+            first_point = {
+                'x': gps_point.position.x,
+                'y': gps_point.position.y,
+                'z': gps_point.position.z
+            }
+            
+            gps_point = sim.map_from_gps(None, None, signal_info['stop_line'][0]['last_point']['y'], signal_info['stop_line'][0]['last_point']['x'],  None, None)
+                        
+            last_point = {
+                'x': gps_point.position.x,
+                'y': gps_point.position.y,
+                'z': gps_point.position.z
+            }
+            
+            stop_line_params = get_line(first_point, last_point)
+            
+            signals_params[str(id)] = stop_line_params
+        
+        tf_obj = {
+            'id': tlight_info[tlight]['id'],
+            'color': tlight_info[tlight]['color'],
+            'stop_line': signals_params[str(id)]
+        }
+        current_signals[str(cnt)] = tf_obj
+        cnt += 1
+        
+    # print("Current Signals: ", current_signals)
+        
+    return control_info['acceleration'], brake_percentage
 
 
 @app.route('/LGSVL/Status/Realistic', methods=['GET'])
@@ -1584,6 +1768,13 @@ def get_c_probability():
     c_probability = probability
     probability = 0
     return str(c_probability)
+
+@app.route('/LGSVL/Status/ViolationRate', methods=['GET'])
+def get_violation_rate():
+    global vioRate
+    c_vioRate = vioRate
+    vioRate = 0
+    return str(c_vioRate)
 
 
 @app.route('/LGSVL/Status/HardBrake', methods=['GET'])
