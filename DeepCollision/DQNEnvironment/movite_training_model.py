@@ -14,7 +14,7 @@ from memory.buffer import ReplayBuffer, PrioritizedReplayBuffer
 
 from utils import *
 
-current_eps = '390'
+current_eps = ''
 
 road_num = '1'  # the Road Number
 second = '6'  # the experiment second
@@ -100,15 +100,6 @@ def get_environment_state():
 
     return state
 
-
-# # Hyper Parameters
-# BATCH_SIZE = 32
-# LR = 0.01  # learning rate
-# EPSILON = 0.8  # greedy policy
-# GAMMA = 0.9  # reward discount
-# TARGET_REPLACE_ITER = 100  # target update frequency
-# MEMORY_CAPACITY = 2000
-
 action_space = get_action_space()['command']
 scenario_space = get_action_space()['scenario_description']
 N_ACTIONS = action_space['num']
@@ -119,7 +110,7 @@ print("Number of action: ", N_ACTIONS)
 print("Number of state: ", N_STATES)
 
 HyperParameter = dict(BATCH_SIZE=32, GAMMA=0.9, EPS_START=1, EPS_END=0.1, EPS_DECAY=6000, TARGET_UPDATE=100,
-                      lr=3*1e-3, INITIAL_MEMORY=2000, MEMORY_SIZE=2000, SCHEDULER_UPDATE=100, WEIGHT_DECAY=1e-5,
+                      lr=3*1e-3, INITIAL_MEMORY=1000, MEMORY_SIZE=2000, SCHEDULER_UPDATE=100, WEIGHT_DECAY=1e-5,
                       LEARNING_RATE_DECAY=0.8)
 
 print("MEMORY SIZE: ", HyperParameter["MEMORY_SIZE"])
@@ -169,11 +160,7 @@ class DQN(object):
         return HyperParameter['LEARNING_RATE_DECAY'] ** epoch
 
     def choose_action(self, x):
-        # print("Is stuck?")
         x = torch.unsqueeze(torch.FloatTensor(x), 0)
-        # print(self.eval_net.forward(x, False))
-        # print(self.target_net.forward(x, False))
-        # input only one sample
         eps_threshold = HyperParameter['EPS_END'] + (
                 HyperParameter['EPS_START'] - HyperParameter['EPS_END']) * math.exp(
             -1. * self.steps_done / HyperParameter['EPS_DECAY'])
@@ -234,7 +221,6 @@ class DQN(object):
         
         if 0 <= action and action <= 12:
             self.previous_weather_and_time = action    
-        # print("It's here")
         return action, choose
 
     def store_transition(self, s, a, r, s_, done):
@@ -259,15 +245,8 @@ class DQN(object):
         batch, weights, tree_idxs = self.buffer_memory.sample(HyperParameter["BATCH_SIZE"])
         state, action, reward, next_state, done = batch        
         action = action.max(dim=1).values.unsqueeze(1).to(torch.int64)
-        # print(action)
-        # action_log = torch.tensor(range(47))
         reward = reward.unsqueeze(1)
-# tensor_1d.reshape(1, -1)        
-        
-        # q_eval w.r.t the action in experience
-        # print(self.eval_net(state))
         q_eval = self.eval_net.forward(state).gather(1, action)  # shape (batch, 1)
-        # print(q_eval)
         q_action = self.eval_net.forward(next_state).max(dim=1).indices
         q_value = self.target_net.forward(next_state).detach()  # detach from graph, don't backpropagate       
         q_next = q_value.max(dim=1).values
@@ -280,10 +259,6 @@ class DQN(object):
         
         td_error = torch.abs(q_eval - q_target).detach()
         loss = torch.mean(torch.abs(q_eval - q_target) ** 2 * weights)
-        # print(weights)
-        #print(q_eval, q_target)
-        
-        # print(q_eval, q_target)
         
         pd.DataFrame([[self.learn_step_counter, self.optimizer.param_groups[0]['lr'], loss.item()]]).to_csv('./loss_log/loss_log_' + file_name + '.csv', 
                                                          mode='a', header=False, index=None)
@@ -298,15 +273,6 @@ class DQN(object):
             self.scheduler.step()
         
         self.buffer_memory.update_priorities(tree_idxs, td_error.numpy())
-        
-        # print(loss.item())
-        
-
-
-# Execute action
-# def execute_action(action_id):
-#     api = action_space[str(action_id)]
-#     requests.post(api)
     
 def execute_action(action_id):
     api = action_space[str(action_id)]
@@ -315,13 +281,13 @@ def execute_action(action_id):
     obstacle_uid = None
     print(response)
     try:
-        probability_list = response.json()['probability']
+        vioRate_list = response.json()['vioRate']
         obstacle_uid = response.json()['collision_uid']
     except Exception as e:
         print(e)
-        probability_list = [-1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -1.0]
+        vioRate_list = [-1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -1.0]
         
-    return probability_list, obstacle_uid
+    return vioRate_list, obstacle_uid
 
 
 latitude_space = []
@@ -371,92 +337,35 @@ def calculate_reward(action_id):
     :param action_id:
     :return:
     """
-    # global latitude_position
-    # global position_space_size
-    # global position_space
-    # global collision_probability
-    probability_list, obstacle_uid = execute_action(action_id)
+    vioRate_list, obstacle_uid = execute_action(action_id)
     observation = get_environment_state()
     action_reward = 0
-    collision_probability = 0
-    # episode_done = False
-    # Reward is calculated based on collision probability.
-    collision_info = (requests.get("http://localhost:8933/LGSVL/Status/CollisionInfo")).content.decode(
-        encoding='utf-8')
-
+    violation_rate = 0
     episode_done = judge_done()
+    
+    violation_rate = round(float(
+        (requests.get("http://localhost:8933/LGSVL/Status/ViolationRate")).content.decode(
+            encoding='utf-8')), 6)
 
-    '''
-    calculate latitude_space
-    '''
-    # latitude = (requests.get("http://localhost:8933/LGSVL/Status/EGOVehicle/Position/X")).content.decode(
-    #     encoding='utf-8')
-    # if len(latitude_space) < check_num:
-    #     latitude_space.append(None)
-    # latitude_space[latitude_position] = latitude
-    # latitude_position = (latitude_position + 1) % check_num
-    # if len(latitude_space) == check_num:
-    #     for i in range(0, len(latitude_space) - 1):
-    #         # print(latitude_space[i], )
-    #         if latitude_space[i] != latitude_space[i + 1]:
-    #             episode_done = False
-    #             break
-    #         if i == len(latitude_space) - 2:
-    #             episode_done = True
-
-    # print("Collision Info: ", collision_info)
-
-    if collision_info != 'None':
-        action_reward = 1
-        collision_probability = 1
-        # episode_done = True
-    elif collision_info == "None":
-        collision_probability = round(float(
-            (requests.get("http://localhost:8933/LGSVL/Status/CollisionProbability")).content.decode(
-                encoding='utf-8')), 6)
-        
-        # DTO = (requests.get("http://localhost:8933/LGSVL/Status/DistanceToObstacle")).content.decode(
-        #         encoding='utf-8')
-        
-        # TTC = (requests.get("http://localhost:8933/LGSVL/Status/TimeToCollision")).content.decode(
-        #         encoding='utf-8')
-        
-        # JERK = (requests.get("http://localhost:8933/LGSVL/Status/JERK")).content.decode(
-        #         encoding='utf-8')
-        
-        # print("TTC: ", TTC, " DTO: ", DTO, " JERK: ", JERK)
-        
-        if collision_probability < 0.2:
-            action_reward = -1
-        else:
-            action_reward = collision_probability
-    return observation, action_reward, collision_probability, episode_done, collision_info, probability_list, obstacle_uid
+    if violation_rate < 0.2:
+        action_reward = -1
+    else:
+        action_reward = violation_rate
+            
+    return observation, action_reward, violation_rate, episode_done, vioRate_list, obstacle_uid
 
 
-title = ["Episode", "Step", "State", "Action", "Reward", "Collision_Probability", "Collision_Probability_List", "Action_Description", "Done"]
+title = ["Episode", "Step", "State", "Action", "Reward", "ViolationRate", "ViolationRate_List", "Action_Description", "Done"]
 df_title = pd.DataFrame([title])
 
-df_title.to_csv('../ExperimentData/innercollision_tartu_' + second + 's_' + file_name + '_road' + road_num + '.csv', mode='w',
+df_title.to_csv('../ExperimentData/movite_tartu_' + second + 's_' + file_name + '_road' + road_num + '.csv', mode='w',
                 header=False,
                 index=None)
-
-# title2 = ["per_confi", "pred_confi", "reward"]
-# pd.DataFrame([title2]).to_csv("./log/per_pred_reward" +.csv", mode='w', header=False, index=None)
-
-
-# title3 = ["is_detected", "max_distance"]
-# pd.DataFrame([title3]).to_csv("./log/max_distance_obs_1.csv", mode='w', header=False, index=None)
 
 if __name__ == '__main__':
     '''
     Establish client to connect to Apollo
     '''
-    # global per_confi
-    # global pred_confi
-    # comm_apollo = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    # address = ('192.168.1.197', 6000)
-    # comm_apollo.connect(address)
-    # print('connected')
 
     dqn = DQN()
     # print(dqn.eval_net.state_dict())
@@ -468,25 +377,18 @@ if __name__ == '__main__':
     if current_eps != '':
         print("Continue at episode: " + current_eps)
         
-        with open('./model/innercollision_tartu_new_sd/rl_network_' + current_eps + '_road' + road_num + '.pkl', "rb") as file:
+        with open('./model/movite_tartu_new_sd/rl_network_' + current_eps + '_road' + road_num + '.pkl', "rb") as file:
             dqn = pickle.load(file)
         # print(dqn.buffer_memory.real_size, dqn.memory_counter, dqn.steps_done, dqn.learn_step_counter)
-        dqn.eval_net.load_state_dict(torch.load('./model/innercollision_tartu_new_sd/eval_net_' + current_eps + '_road' + road_num + '.pt'))
-        dqn.target_net.load_state_dict(torch.load('./model/innercollision_tartu_new_sd/target_net_' + current_eps + '_road' + road_num + '.pt'))
+        dqn.eval_net.load_state_dict(torch.load('./model/movite_tartu_new_sd/eval_net_' + current_eps + '_road' + road_num + '.pt'))
+        dqn.target_net.load_state_dict(torch.load('./model/movite_tartu_new_sd/target_net_' + current_eps + '_road' + road_num + '.pt'))
         # restore memory buffer
-        with open('./model/innercollision_tartu_new_sd/memory_buffer_' + current_eps + '_road' + road_num + '.pkl', "rb") as file:
+        with open('./model/movite_tartu_new_sd/memory_buffer_' + current_eps + '_road' + road_num + '.pkl', "rb") as file:
             dqn.buffer_memory = pickle.load(file)
             
         print(dqn.buffer_memory.real_size, dqn.learn_step_counter, dqn.steps_done)
         
         # print(dqn.buffer_memory.real_size, dqn.memory_counter, dqn.steps_done, dqn.learn_step_counter)
-        
-    # dqn.target_net.load_state_dict(torch.load('./model/target_net_2.pt'))
-    # print(dqn.eval_net.state_dict())
-    # print(dqn.target_net.state_dict())
-    # requests.post("http://localhost:8933/LGSVL/LoadScene?scene=SanFrancisco")
-
-    # comm_apollo.send(str(1).encode())
 
     print('\nCollecting experience...')
     road_num_int = int(road_num)
@@ -497,8 +399,8 @@ if __name__ == '__main__':
 
         df_title = pd.DataFrame([title])
         file_name = str(int(time.time()))
-        pd.DataFrame([["Learning Step", "Learning Rate", "Loss"]]).to_csv('./loss_log/loss_log_' + file_name + '.csv', 
-                                                         mode='w', header=False, index=None)
+        # pd.DataFrame([["Learning Step", "Learning Rate", "Loss"]]).to_csv('./loss_log/loss_log_' + file_name + '.csv', 
+        #                                                  mode='w', header=False, index=None)
         # df_title.to_csv('../ExperimentData/InnerCollision_experiment_' + second + 's_' + file_name + '_road' + road_num + '.csv',
         #                 mode='w', header=False,
         #                 index=None)
@@ -509,7 +411,7 @@ if __name__ == '__main__':
         requests.post("http://localhost:8933/LGSVL/SetObTime?observation_time=" + '6')
         #isRouted = False
     
-        for i_episode in range(390, 400):
+        for i_episode in range(0, 200):
             print('------------------------------------------------------')
             print('+                 Road, Episode: ', road_num_int, i_episode, '                +')
             print('------------------------------------------------------')
@@ -536,7 +438,9 @@ if __name__ == '__main__':
                     
                 action_description = scenario_space[str(action)]
                 # take action
-                s_, reward, collision_probability, done, info, list_prob, obstacle_uid = calculate_reward(action)
+                s_, reward, vioRate, done, vioRate_list, obstacle_uid = calculate_reward(action)
+                
+                print("Reward: ", reward)
                 
                 dis__ = 100
                 
@@ -599,12 +503,12 @@ if __name__ == '__main__':
                 
                 # print(s, action, reward, s_, done)
                 print('>>>>>step, action, reward, collision_probability, action_description, done: ', step, action,
-                      reward, round(collision_probability, 6),
+                      reward, round(vioRate, 6),
                       "<" + action_description + ">",
                       done)
                 pd.DataFrame(
-                    [[i_episode, step, s, action, reward, collision_probability, list_prob, action_description, done]]).to_csv(
-                    '../ExperimentData/innercollision_tartu_' + second + 's_' + file_name + '_road' + road_num + '.csv',
+                    [[i_episode, step, s, action, reward, vioRate, vioRate_list, action_description, done]]).to_csv(
+                    '../ExperimentData/movite_tartu_' + second + 's_' + file_name + '_road' + road_num + '.csv',
                     mode='a',
                     header=False, index=None)
                 
@@ -624,17 +528,17 @@ if __name__ == '__main__':
                     # print(dqn.eval_net.state_dict())
                     # print(dqn.target_net.state_dict())
                     torch.save(dqn.eval_net.state_dict(),
-                               './model/innercollision_tartu_new_sd/eval_net_' + str(
+                               './model/movite_tartu_new_sd/eval_net_' + str(
                                    i_episode + 1) + '_road' + road_num + '.pt')
                     torch.save(dqn.target_net.state_dict(),
-                               './model/innercollision_tartu_new_sd/target_net_' + str(
+                               './model/movite_tartu_new_sd/target_net_' + str(
                                    i_episode + 1) + '_road' + road_num + '.pt')
                     
-                    with open('./model/innercollision_tartu_new_sd/memory_buffer_' + str(
+                    with open('./model/movite_tartu_new_sd/memory_buffer_' + str(
                                    i_episode + 1) + '_road' + road_num + '.pkl', "wb") as file:
                         pickle.dump(dqn.buffer_memory, file)
                         
-                    with open('./model/innercollision_tartu_new_sd/rl_network_' + str(
+                    with open('./model/movite_tartu_new_sd/rl_network_' + str(
                                    i_episode + 1) + '_road' + road_num + '.pkl', "wb") as file:
                         pickle.dump(dqn, file)
                     
