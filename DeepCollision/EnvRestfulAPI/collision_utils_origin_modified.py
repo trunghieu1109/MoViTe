@@ -82,7 +82,10 @@ def calculate_collision_probability(safe_distance, current_distance):
     return collision_probability
 
 def calculate_violation_rate(safe_distance, current_distance):
-    return safe_distance / current_distance
+    if current_distance >= safe_distance:
+        return safe_distance / current_distance
+    else:
+        return 1.0
 
 @jit(nopython=True, fastmath=True)
 def get_collision_probability_2(current_distance, ego_rotation, agent_rotation, ego_position, 
@@ -180,23 +183,22 @@ def judge_same_line(a1_position, a1_speed, a1_velocity, a2_position, a2_speed, k
 
     return judge, ego_ahead, TTC
 
-def judge_condition(state_list, ego_state, brake_percentage, ego_world_vel, agent_world_vel, 
-                       ego_world_acc, ego_world_pos, road, next_road, current_signals):
+def judge_condition(state_list, ego_state, brake_percentage, ego_acc, road, next_road, current_signals, p_tlight_sign):
     ego_transform = ego_state.transform
     ego_position = np.array([ego_transform.position.x, ego_transform.position.y, ego_transform.position.z])
     ego_velocity = np.array([ego_state.velocity.x, ego_state.velocity.y, ego_state.velocity.z])
-    ego_world_speed =  math.sqrt(ego_world_vel['vx']**2 + ego_world_vel['vy']**2)
+    ego_speed =  ego_state.speed
 
     trajectory_ego_k, trajectory_ego_b = get_line(ego_position, ego_velocity)
     #Passing 0, Lane Changing 1, Turning 2, Braking 3, Speeding 4, Cruising 5 
-    condition = [0, 0, 0, 0 , 0, 0]
+    condition = [0, 0, 0, 0, 0, 0]
     
     #Check braking
     if brake_percentage >= 40:
         condition[3] = 1
         
     #Check Speeding
-    if ego_world_acc > 0: 
+    if ego_speed > 30 and ego_acc > 0: 
         condition[4] = 1
         
     #Check Passing
@@ -206,27 +208,41 @@ def judge_condition(state_list, ego_state, brake_percentage, ego_world_vel, agen
         a_position = np.array([transform.position.x, transform.position.y, transform.position.z])
         a_velocity = np.array([state.velocity.x, state.velocity.y, state.velocity.z])
         trajectory_agent_k, trajectory_agent_b = get_line(a_position, a_velocity)
-        agent_world_speed = math.sqrt(agent_world_vel[i]['vx'] ** 2 + agent_world_vel[i]['vy'] ** 2)
+        agent_speed = state.speed
         ego_diff = ego_velocity - ego_position
         agent_diff = a_velocity - a_position
-        if (abs(trajectory_ego_k - trajectory_agent_k) < 0.01) and np.dot(ego_diff, agent_diff) > 0  and  (ego_world_speed > agent_world_speed) and (ego_world_acc > 0):
+        if (abs(trajectory_ego_k - trajectory_agent_k) < 0.01) and np.dot(ego_diff, agent_diff) > 0  and  (ego_speed > agent_speed) and (ego_acc > 0):
             condition[0] = 1
     
     #Check Turn & Lane change
-        angle_radians = math.atan2(road['y'], road['x']) - math.atan2(next_road['y'], next_road['x'])
-        if (abs(angle_radians) > math.pi/4): 
-            condition[2] = 1
-        elif (road['lane_id'] != next_road['lane_id']):
-            condition[1] = 1
-    
+    angle_radians = math.atan2(road['z'], road['x']) - math.atan2(next_road['z'], next_road['x'])
+    angle_radians_ego = math.atan2(road['z'], road['x']) - math.atan2(ego_velocity[2], ego_velocity[0])
+    if (abs(angle_radians) > math.pi/4): 
+        condition[2] = 1
+    elif (abs(angle_radians_ego) > math.pi/4 and road['lane_id'] != next_road['lane_id']):
+        condition[1] = 1
+        
     #Check signal
     for signal in current_signals:
-        if signal['color'] == 1:
-            signal_dist = abs(ego_world_pos['x'] * signal['a'] + ego_world_pos['y'] * signal['b'] + signal['c']) / math.sqrt(signal['a']**2 + signal['b']**2)
+        tlight = current_signals[signal]
+        if tlight['color'] == 1:
+            a = tlight['stop_line']['a']
+            b = tlight['stop_line']['b']
+            c = tlight['stop_line']['c']
+            
+            signal_dist = abs(ego_position[0] * a + ego_position[2] * b + c) / math.sqrt(a**2 + b**2)
             if (signal_dist <= 5):
-                condition[5] = 1
-        
-    return condition
+                condition[5] = max(condition[5], 2 * (1 - 1/(1 + math.exp(-signal_dist))))
+                tlight_sign_i = (ego_position[0] * a + ego_position[2] * b + c > 0)
+                if tlight['id'] in p_tlight_sign:
+                    if p_tlight_sign[tlight['id']] != tlight_sign_i:
+                        condition[5] = 1
+                        p_tlight_sign[tlight['id']] = tlight_sign_i
+
+                else:
+                    p_tlight_sign[tlight['id']] = tlight_sign_i
+                    
+    return condition, p_tlight_sign
 
 
 def calculate_TTC(agents, ego, dis_tag):
@@ -277,6 +293,9 @@ def calculate_TTC(agents, ego, dis_tag):
         if abs(time_ego - time_agent) < 1:
             TTC = min(TTC, (time_ego + time_agent) / 2)
 
+    
+    
+
     return TTC, distance
 
 @jit(nopython=True, fastmath=True)
@@ -300,29 +319,40 @@ def get_world_acc(world_speed, sim_speed, sim_acc, coord, world_vel):
     return world_vel['vy'] / world_speed * world_acc
 
 # @jit(nopython=True, fastmath=True)
-def calculate_measures(state_list, ego_state, isNpcVehicle, ego_world_vel, agent_world_vel, 
-                       ego_world_pos, agent_world_pos, current_signals,
-                       road, next_road, mid_point = None, dis_tag = True):
+def calculate_measures(state_list, ego_state, isNpcVehicle, current_signals, ego_curr_acc, brake_percentage, 
+                       road, next_road, p_tlight_sign, mid_point = None, dis_tag = True):
     
     ego_transform = ego_state.transform
-    ego_world_speed = math.sqrt(ego_world_vel['vx'] ** 2 + ego_world_vel['vy'] ** 2)
-    ego_world_acc = {
-        'x': get_world_acc(ego_world_speed, ego_state.speed, 6, 0, ego_world_vel),
-        'y': get_world_acc(ego_world_speed, ego_state.speed, 6, 1, ego_world_vel)
-    }
+    ego_speed = ego_state.speed
     
     ego_position = np.array([ego_transform.position.x, ego_transform.position.y, ego_transform.position.z])
     ego_velocity = np.array([ego_state.velocity.x, ego_state.velocity.y, ego_state.velocity.z])
+    
+    ego_acc = None
+    
+    if ego_speed == 0:
+        ego_acc = np.array([6, 6, 6])
+    else:
+        ego_acc = np.array([ego_velocity[0] / ego_speed * 6, ego_velocity[1] / ego_speed * 6, ego_velocity[2] / ego_speed * 6])
+        if ego_acc[0] == 0: 
+            ego_acc[0] = 0.001
+        if ego_acc[1] == 0: 
+            ego_acc[1] = 0.001
+        if ego_acc[2] == 0: 
+            ego_acc[2] = 0.001
+    
+    # print("Ego Velocity: ", ego_velocity)
+    # print("Ego Acc: ", ego_acc)
+    
 
     trajectory_ego_k, trajectory_ego_b = get_line(ego_position, ego_velocity)
 
     TTC = 100000
-    distance = 100
+    distance = 10000
     loProC_list, laProC_list = [0], [0]  # probability
     loVioRate_list, laVioRate_list = [0], [0]
     proC_list = [0]
     vioRate_list = [0]
-    
     
     reaction_time = 1.0
     
@@ -331,22 +361,30 @@ def calculate_measures(state_list, ego_state, isNpcVehicle, ego_world_vel, agent
         state = state_list[i]
         a_position = np.array([transform.position.x, transform.position.y, transform.position.z])
         a_velocity = np.array([state.velocity.x, state.velocity.y, state.velocity.z])
+        agent_acc = None
         
         if dis_tag:
             dis = get_distance(ego_position, a_position[0], a_position[2])
             distance = dis if dis <= distance else distance
         trajectory_agent_k, trajectory_agent_b = get_line(a_position, a_velocity)
-        agent_world_speed = math.sqrt(agent_world_vel[i]['vx'] ** 2 + agent_world_vel[i]['vy'] ** 2)
-        if isNpcVehicle:
-            agent_world_acc = {
-                'x': get_world_acc(agent_world_speed, state.speed, 6, 0, agent_world_vel[i]),
-                'y': get_world_acc(agent_world_speed, state.speed, 6, 1, agent_world_vel[i])
-            }
+        agent_speed = state.speed
+        if isNpcVehicle[i]:
+            if agent_speed == 0:
+                agent_acc = np.array([6, 6, 6])
+            else:
+                agent_acc = np.array([a_velocity[0] / state.speed * 6, a_velocity[1] / state.speed * 6, a_velocity[2] / state.speed * 6])
         else:
-            agent_world_acc = {
-                'x': get_world_acc(agent_world_speed, state.speed, 1.5, 0, agent_world_vel[i]),
-                'y': get_world_acc(agent_world_speed, state.speed, 1.5, 1, agent_world_vel[i])
-            }
+            if agent_speed == 0:
+                agent_acc = np.array([1.5, 1.5, 1.5])
+            else:
+                agent_acc = np.array([a_velocity[0] / state.speed * 1.5, a_velocity[1] / state.speed * 1.5, a_velocity[2] / state.speed * 1.5])
+
+        if agent_acc[0] == 0: 
+            agent_acc[0] = 0.001
+        if agent_acc[1] == 0: 
+            agent_acc[1] = 0.001
+        if agent_acc[2] == 0: 
+            agent_acc[2] = 0.001
 
         ttc = 5
 
@@ -355,20 +393,28 @@ def calculate_measures(state_list, ego_state, isNpcVehicle, ego_world_vel, agent
 
         # Calculate LoSD
         loSD = 100000
+        
+        # print("Agent Velocity: ", a_velocity)
+        # print("Agent Acc: ", agent_acc)
 
-        if ego_world_vel['vx'] * agent_world_vel[i]['vx'] > 0:
-            if ego_world_vel['vx'] * (ego_world_pos['x'] - agent_world_pos[i]['x']) < 0:
+        if ego_velocity[0] * a_velocity[0] > 0:
+            if ego_velocity[0] * (ego_position[0] - a_position[0]) < 0:
                 loSD = 1 / 2 * (
-                    abs(pow(ego_world_vel['vx'], 2) / ego_world_acc['x'] - pow(agent_world_vel[i]['vx'], 2) / agent_world_acc['x'])) + ego_world_vel['vx'] * reaction_time + 5
+                    abs(pow(ego_velocity[0], 2) / ego_acc[0] - pow(a_velocity[0], 2) / agent_acc[0])) + ego_velocity[0] * reaction_time + 5
             else: 
                 loSD = 1 / 2 * (
-                    abs(pow(ego_world_vel['vx'], 2) / ego_world_acc['x'] - pow(agent_world_vel[i]['vx'], 2) / agent_world_acc['x'])) + agent_world_vel[i]['vx'] * reaction_time + 5
+                    abs(pow(ego_velocity[0], 2) / ego_acc[0] - pow(a_velocity[0], 2) / agent_acc[0])) + a_velocity[0] * reaction_time + 5
         else:
             loSD = 1 / 2 * (
-                abs(pow(ego_world_vel['vx'], 2) / ego_world_acc['x'] + pow(agent_world_vel[i]['vx'], 2) / agent_world_acc['x'])) + ego_world_vel['vx'] + agent_world_vel[i]['vx'] + 5
+                abs(pow(ego_velocity[0], 2) / ego_acc[0] + pow(a_velocity[0], 2) / agent_acc[0])) + ego_velocity[0] + ego_velocity[0] + 5
         
-        loProC = calculate_collision_probability(loSD, abs(ego_world_pos['x'] - agent_world_pos[i]['x']))
-        loVioRate = calculate_violation_rate(loSD, abs(ego_world_pos['x'] - agent_world_pos[i]['x']))
+        # print("Safety Distance Lo: ", loSD)
+        # print("Current Distance Lo: ", abs(ego_position[0] - a_position[0]))
+        loProC = calculate_collision_probability(loSD, abs(ego_position[0] - a_position[0]))
+        # print("Lo Proc: ", loProC)
+        loVioRate = calculate_violation_rate(loSD, abs(ego_position[0] - a_position[0]))
+        # print("Lo Violation Rate: ", loVioRate)
+        
         loProC_list.append(loProC)
         loVioRate_list.append(loVioRate)
 
@@ -383,29 +429,44 @@ def calculate_measures(state_list, ego_state, isNpcVehicle, ego_world_vel, agent
 
         ego_distance = get_distance(ego_position, collision_point_x, collision_point_z)
         agent_distance = get_distance(a_position, collision_point_x, collision_point_z)
-        time_ego = ego_distance / ego_world_speed
-        time_agent = agent_distance / agent_world_speed
+        if ego_speed:
+            time_ego = ego_distance / ego_speed
+        else:
+            time_ego = ego_distance / 0.001
+        if agent_speed:
+            time_agent = agent_distance / agent_speed
+        else:
+            time_agent = agent_distance / 0.001
         
         laSD = 1000000
         
-        if ego_world_vel['vy'] * agent_world_vel[i]['vy'] > 0:
-            if ego_world_vel['vy'] * (ego_world_pos['y'] - agent_world_pos[i]['y']) < 0:
+        if ego_velocity[2] * a_velocity[2] > 0:
+            if ego_velocity[2] * (ego_position[2] - a_position[2]) < 0:
                 laSD = 1 / 2 * (
-                    abs(pow(ego_world_vel['vy'], 2) / ego_world_acc['y'] - pow(agent_world_vel[i]['vy'], 2) / agent_world_acc['y'])) + ego_world_vel['vy'] * reaction_time + 5
-            else:
+                    abs(pow(ego_velocity[2], 2) / ego_acc[2] - pow(a_velocity[2], 2) / agent_acc[2])) + ego_velocity[2] * reaction_time + 5
+            else: 
                 laSD = 1 / 2 * (
-                    abs(pow(ego_world_vel['vy'], 2) / ego_world_acc['y'] - pow(agent_world_vel[i]['vy'], 2) / agent_world_acc['y'])) + agent_world_vel[i]['vy'] * reaction_time + 5
+                    abs(pow(ego_velocity[2], 2) / ego_acc[2] - pow(a_velocity[2], 2) / agent_acc[2])) + a_velocity[2] * reaction_time + 5
         else:
             laSD = 1 / 2 * (
-                abs(pow(ego_world_vel['vy'], 2) / ego_world_acc['y'] + pow(agent_world_vel[i]['vy'], 2) / agent_world_acc['y'])) + ego_world_vel['vy'] + agent_world_vel[i]['vy'] + 5
+                abs(pow(ego_velocity[2], 2) / ego_acc[2] + pow(a_velocity[2], 2) / agent_acc[2])) + ego_velocity[2] + ego_velocity[2] + 5
 
-        laProC = calculate_collision_probability(laSD, abs(ego_world_pos['y'] - agent_world_pos[i]['y']))
-        laVioRate = calculate_violation_rate(laSD, abs(ego_world_pos['y'] - agent_world_pos[i]['y']))
+        # print("Safety Distance La: ", laSD)
+        # print("Current Distance La: ", abs(ego_position[2] - a_position[2]))
+        laProC = calculate_collision_probability(laSD, abs(ego_position[2] - a_position[2]))
+        # print("La Proc: ", laProC)
+        laVioRate = calculate_violation_rate(laSD, abs(ego_position[2] - a_position[2]))
+        # print("La Violation Rate: ", laVioRate)
         laProC_list.append(laProC)
         laVioRate_list.append(laVioRate)
         
         proC = laProC * loProC
+        
+        # print("ProC: ", proC)
+        
         vioRate = laVioRate * loVioRate
+        
+        # print("Violation Rate: ", vioRate)
         
         proC_list.append(proC)
         vioRate_list.append(vioRate)
@@ -415,8 +476,55 @@ def calculate_measures(state_list, ego_state, isNpcVehicle, ego_world_vel, agent
 
     proC_dt = max(proC_list)
     vioRate_dt = max(vioRate_list)
+    
+    #Passing 0, Lane Changing 1, Turning 2, Braking 3, Speeding 4, Cruising 5 
+    condition, curr_tlight_sign = judge_condition(state_list, ego_state, brake_percentage, ego_curr_acc, road, next_road, current_signals, p_tlight_sign)
+    
+    total_rate = 0
+    
+    if condition[0]:
+        print("Passing")
 
-    return TTC, distance, proC_dt
+    if condition[1]:
+        print("Lane Changing")
+        
+    if condition[2]:
+        print("Turning")
+        
+    if condition[3]:
+        print("Braking")
+        
+    if condition[4]:
+        print("Speeding")
+        
+    if condition[5] == 1:
+        print("Run on red light")
+        
+    cnt_behavior = 0
+    
+    # print("Violation Rate: ", vioRate_dt)
+        
+    for behavior in condition:
+        
+        if behavior != 0 and behavior != 1:
+            total_rate += behavior
+        else:
+            total_rate += behavior * vioRate_dt
+            
+        cnt_behavior += (behavior != 0)
+        
+    if (proC_dt > 0):
+        total_rate += proC_dt
+        cnt_behavior += 1
+        
+    if (cnt_behavior == 0):
+        cnt_behavior = 0.001
+    
+    vioRate_avg = total_rate / cnt_behavior
+    
+    # print("Violation Rate Avg: ", vioRate_avg)
+
+    return TTC, distance, proC_dt, vioRate_avg, curr_tlight_sign
 
 
 if __name__ == "__main__":
