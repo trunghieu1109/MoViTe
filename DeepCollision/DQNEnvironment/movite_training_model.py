@@ -109,12 +109,13 @@ ENV_A_SHAPE = 0
 print("Number of action: ", N_ACTIONS)
 print("Number of state: ", N_STATES)
 
-HyperParameter = dict(BATCH_SIZE=32, GAMMA=0.9, EPS_START=1, EPS_END=0.1, EPS_DECAY=6000, TARGET_UPDATE=100,
-                      lr=3*1e-3, INITIAL_MEMORY=1000, MEMORY_SIZE=2000, SCHEDULER_UPDATE=100, WEIGHT_DECAY=1e-5,
+HyperParameter = dict(BATCH_SIZE=32, GAMMA=0.9, EPS_START=1, EPS_END=0.1, EPS_DECAY=4000, TARGET_UPDATE=100,
+                      lr=3*1e-3, INITIAL_MEMORY=2000, MEMORY_SIZE=1000, SCHEDULER_UPDATE=100, WEIGHT_DECAY=1e-5,
                       LEARNING_RATE_DECAY=0.8)
 
 print("MEMORY SIZE: ", HyperParameter["MEMORY_SIZE"])
 print("BATCH SIZE: ", HyperParameter["BATCH_SIZE"])
+print("EPS DECAY: ", HyperParameter["EPS_DECAY"])
 
 class Net(nn.Module):
     def __init__(self, ):
@@ -165,7 +166,7 @@ class DQN(object):
                 HyperParameter['EPS_START'] - HyperParameter['EPS_END']) * math.exp(
             -1. * self.steps_done / HyperParameter['EPS_DECAY'])
         
-        eps_threshold = 0.2
+        # eps_threshold = 0.2
         
         print("eps threshold:", eps_threshold)
         

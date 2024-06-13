@@ -239,6 +239,7 @@ def judge_condition(state_list, ego_state, brake_percentage, ego_acc, road, next
 
     ego_position = front_position
     for signal in current_signals:
+        tlight = current_signals[signal]
         if tlight['color'] == 1:
             a = tlight['stop_line']['a']
             b = tlight['stop_line']['b']
@@ -246,7 +247,7 @@ def judge_condition(state_list, ego_state, brake_percentage, ego_acc, road, next
             
             signal_dist = abs(ego_position[0] * a + ego_position[2] * b + c) / math.sqrt(a**2 + b**2)
             if (signal_dist <= 5):
-                print(f"Signal dist: signal_dist {signal_dist}\n")
+                # print(f"Signal dist: signal_dist {signal_dist}\n")
                 condition[5] = max(condition[5], 2 * (1 - 1/(1 + math.exp(-signal_dist))))
                 if tlight['id'] in p_tlight_sign:
                     # tlight_sign_i = False
