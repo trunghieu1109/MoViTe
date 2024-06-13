@@ -183,12 +183,23 @@ def judge_same_line(a1_position, a1_speed, a1_velocity, a2_position, a2_speed, k
 
     return judge, ego_ahead, TTC
 
-def judge_condition(state_list, ego_state, brake_percentage, ego_acc, road, next_road, current_signals, p_tlight_sign):
+def judge_condition(state_list, ego_state, brake_percentage, ego_acc, road, next_road, p_lane_id, current_signals, p_tlight_sign, orientation):
     ego_transform = ego_state.transform
     ego_position = np.array([ego_transform.position.x, ego_transform.position.y, ego_transform.position.z])
+
+    yaw_deg = ego_transform.rotation.z
+    yaw_rad = np.deg2rad(yaw_deg)
+    front_position = np.array([
+       ego_position[0] + 2.3 * np.cos(yaw_rad),
+       ego_position[1],
+       ego_position[2] + 2.3 * np.sin(yaw_rad)
+    ])
+    # print(f"Ego_position: {ego_position}\n")
+    # print(f"Front_position: {front_position}\n")
+    
     ego_velocity = np.array([ego_state.velocity.x, ego_state.velocity.y, ego_state.velocity.z])
     ego_speed =  ego_state.speed
-
+    
     trajectory_ego_k, trajectory_ego_b = get_line(ego_position, ego_velocity)
     #Passing 0, Lane Changing 1, Turning 2, Braking 3, Speeding 4, Cruising 5 
     condition = [0, 0, 0, 0, 0, 0]
@@ -198,7 +209,7 @@ def judge_condition(state_list, ego_state, brake_percentage, ego_acc, road, next
         condition[3] = 1
         
     #Check Speeding
-    if ego_speed > 30 and ego_acc > 0: 
+    if ego_speed*3.6 > 30 and ego_acc > 0: 
         condition[4] = 1
         
     #Check Passing
@@ -222,9 +233,12 @@ def judge_condition(state_list, ego_state, brake_percentage, ego_acc, road, next
     elif (abs(angle_radians_ego) > math.pi/6 and road['lane_id'] != next_road['lane_id']):
         condition[1] = 1
         
+    # print("Prev: ", p_tlight_sign) 
+        
     #Check signal
+
+    ego_position = front_position
     for signal in current_signals:
-        tlight = current_signals[signal]
         if tlight['color'] == 1:
             a = tlight['stop_line']['a']
             b = tlight['stop_line']['b']
@@ -232,16 +246,34 @@ def judge_condition(state_list, ego_state, brake_percentage, ego_acc, road, next
             
             signal_dist = abs(ego_position[0] * a + ego_position[2] * b + c) / math.sqrt(a**2 + b**2)
             if (signal_dist <= 5):
+                print(f"Signal dist: signal_dist {signal_dist}\n")
                 condition[5] = max(condition[5], 2 * (1 - 1/(1 + math.exp(-signal_dist))))
-                tlight_sign_i = (ego_position[0] * a + ego_position[2] * b + c > 0)
                 if tlight['id'] in p_tlight_sign:
-                    if p_tlight_sign[tlight['id']] != tlight_sign_i:
+                    # tlight_sign_i = False
+                    tlight_sign_temp = (ego_position[0] * a + ego_position[2] * b + c  > 0)
+                    if (p_tlight_sign[tlight['id']] != tlight_sign_temp ):
+                        print(f"Run on a red light\n") 
                         condition[5] = 1
-                        p_tlight_sign[tlight['id']] = tlight_sign_i
-
+                        # p_tlight_sign[tlight['id']] = tlight_sign_temp   
+                    # if p_tlight_sign[tlight['id']] == False:
+                    #     tlight_sign_i = (ego_position[0] * a + ego_position[2] * b + c - addition > 0)
+                    # else:
+                    #     tlight_sign_i = (ego_position[0] * a + ego_position[2] * b + c + addition > 0)
+                        
+                    # if p_tlight_sign[tlight['id']] != tlight_sign_i:
+                    #     condition[5] = 1
+                    #     p_tlight_sign[tlight['id']] = tlight_sign_i
                 else:
+                    tlight_sign_i = (ego_position[0] * a + ego_position[2] * b + c > 0)
                     p_tlight_sign[tlight['id']] = tlight_sign_i
-                    
+                    # if tlight_sign_i == False:
+                    #     p_tlight_sign[tlight['id']] = (ego_position[0] * a + ego_position[2] * b + c - addition > 0)
+                    # else:
+                    #     p_tlight_sign[tlight['id']] = (ego_position[0] * a + ego_position[2] * b + c + addition > 0)
+                        
+    # print("Curr: ", p_tlight_sign) 
+#    print(f"Speed, ego: {ego_speed}, {ego_acc}\n")
+    # print(f"Condition: Passing {condition[0]}, Lane Changing {condition[1]}, Turning {condition[2]}, Braking {condition[3]}, Speeding {condition[4]}, Cruising {condition[5]} \n ")
     return condition, p_tlight_sign
 
 
@@ -320,7 +352,7 @@ def get_world_acc(world_speed, sim_speed, sim_acc, coord, world_vel):
 
 # @jit(nopython=True, fastmath=True)
 def calculate_measures(state_list, ego_state, isNpcVehicle, current_signals, ego_curr_acc, brake_percentage, 
-                       road, next_road, p_tlight_sign, mid_point = None, dis_tag = True):
+                       road, next_road, p_lane_id, p_tlight_sign, orientation, mid_point = None, dis_tag = True):
     
     ego_transform = ego_state.transform
     ego_speed = ego_state.speed
@@ -478,24 +510,24 @@ def calculate_measures(state_list, ego_state, isNpcVehicle, current_signals, ego
     vioRate_dt = max(vioRate_list)
     
     #Passing 0, Lane Changing 1, Turning 2, Braking 3, Speeding 4, Cruising 5 
-    condition, curr_tlight_sign = judge_condition(state_list, ego_state, brake_percentage, ego_curr_acc, road, next_road, current_signals, p_tlight_sign)
+    condition, curr_tlight_sign = judge_condition(state_list, ego_state, brake_percentage, ego_curr_acc, road, next_road, p_lane_id, current_signals, p_tlight_sign, orientation)
     
     total_rate = 0
     
-    if condition[0]:
-        print("Passing")
+    # if condition[0]:
+    #     print("Passing")
 
-    if condition[1]:
-        print("Lane Changing")
+    # if condition[1]:
+    #     print("Lane Changing")
         
-    if condition[2]:
-        print("Turning")
+    # if condition[2]:
+    #     print("Turning")
         
-    if condition[3]:
-        print("Braking")
+    # if condition[3]:
+    #     print("Braking")
         
-    if condition[4]:
-        print("Speeding")
+    # if condition[4]:
+    #     print("Speeding")
         
     if condition[5] == 1:
         print("Run on red light")

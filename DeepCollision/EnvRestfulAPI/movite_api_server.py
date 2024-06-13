@@ -127,6 +127,7 @@ signals_params = {}
 vioRate = 0
 
 prev_tlight_sign = {}
+prev_lane_id = ""
 
 
 # on collision callback function
@@ -222,20 +223,19 @@ def get_type(class_name):
 
 def calculate_measures_thread(state_list, ego_state, isNpcVehicle, TTC_list, vioRate_list,
                               distance_list, probability_list, current_signals, ego_curr_acc, brake_percentage,
-                              road, next_road, prev_tlight_sign_, mid_point=None, collision_tag_=False):
+                              road, next_road, p_lane_id, prev_tlight_sign_, orientation, mid_point=None, collision_tag_=False):
 
     p_tlight_sign = prev_tlight_sign_
     
-    print(prev_tlight_sign_)
+    # print(prev_tlight_sign_)
 
     TTC, distance, probability2, vioRate, tlight_sign = calculate_measures(
         state_list, ego_state, isNpcVehicle, current_signals, ego_curr_acc, brake_percentage,
-        road, next_road, p_tlight_sign, mid_point, True)
+        road, next_road, p_lane_id, p_tlight_sign, orientation, mid_point, True)
 
     prev_tlight_sign_ = tlight_sign
     
-    print(prev_tlight_sign_)
-    
+    # print(prev_tlight_sign_)    
 
     TTC_list.append(round(TTC, 6))
 
@@ -265,6 +265,7 @@ def calculate_metrics(agents, ego):
     global next_lane_waypoint
     global vioRate
     global prev_tlight_sign
+    global prev_lane_id
 
     collision_object = None
     collision_speed = 0  # 0 indicates there is no collision occurred.
@@ -299,7 +300,7 @@ def calculate_metrics(agents, ego):
         
         # print("Simulator run in 0.5s")
         
-        ego_curr_acc, brake_percentage = get_sub_state()
+        ego_curr_acc, brake_percentage, orientation = get_sub_state()
         
         # print("Ego current acc: ", ego_curr_acc)
         
@@ -329,6 +330,13 @@ def calculate_metrics(agents, ego):
             'lane_id': next_lane_waypoint['lane_id']
         }
         
+        if prev_lane_id == "":
+            p_lane_id = road['lane_id']
+        else:        
+            p_lane_id = prev_lane_id
+            
+        prev_lane_id = road['lane_id']
+        
         # print("Road direction: ", road)
         # print("Next Road direction: ", next_road)
 
@@ -336,7 +344,7 @@ def calculate_metrics(agents, ego):
             target=calculate_measures_thread,
             args=(state_list, ego_state, isNpcVehicle, TTC_list, vioRate_list,
                   distance_list, probability_list, current_signals, ego_curr_acc, 
-                  brake_percentage, road, next_road, prev_tlight_sign, MID_POINT, collision_tag,)
+                  brake_percentage, road, next_road, p_lane_id, prev_tlight_sign, orientation, MID_POINT, collision_tag,)
         )
 
         thread.start()
@@ -441,6 +449,8 @@ def load_scene():
     global EGO
     global ROAD
     global prev_tlight_sign
+    global prev_lane_id
+    prev_lane_id = ""
     prev_tlight_sign = {}
 
     print('obTime: ', observation_time)
@@ -1125,7 +1135,7 @@ def interpreter_signal(signal_state):
 
 def get_line(point_a, point_b):
     a = (point_a['z'] - point_b['z'])
-    b = (point_a['x'] - point_b['x'])
+    b = -(point_a['x'] - point_b['x'])
     c = - point_a['x'] * a - point_a['z'] * b
     
     return {
@@ -1238,11 +1248,15 @@ def get_environment_state():
     # transform ego's position to world coordinate position
     transform = lgsvl.Transform(
         lgsvl.Vector(position.x, position.y,
-                     position.z), lgsvl.Vector(1, 105, 0)
+                     position.z), lgsvl.Vector(rotation.x, rotation.y, rotation.z)
     )
     gps = sim.map_to_gps(transform)
     dest_x = gps.easting
     dest_y = gps.northing
+
+    # orient = gps.orientation
+    
+    # print("Orientation: ", gps.orientation)
 
     # Calculate the differences between localization and simulator
 
@@ -1475,6 +1489,29 @@ def get_sub_state():
     global current_signals
     global signals_map
     global signals_params
+    
+    agents = sim.get_agents()
+    
+    position = agents[0].state.position
+    rotation = agents[0].state.rotation
+    
+    transform = lgsvl.Transform(
+        lgsvl.Vector(position.x, position.y,
+                     position.z), lgsvl.Vector(rotation.x, rotation.y, rotation.z)
+    )
+    gps = sim.map_to_gps(transform)
+    dest_x = gps.easting
+    dest_y = gps.northing
+
+    orient = gps.orientation
+    
+    orient_radians = math.radians(orient)
+
+    addition = {
+        'x': math.cos(orient_radians) * 2.3,
+        'y': math.sin(orient_radians) * 2.3
+    }
+    
     current_signals = {}
     lane_waypoint = {
         'point_f': {
@@ -1508,6 +1545,9 @@ def get_sub_state():
     local_info, control_info, tlight_info, chassis_info = get_apollo_sub_msg()
     brake_percentage = chassis_info['brake_percentage']
     
+    local_info['position']['x'] += addition['x']
+    local_info['position']['y'] += addition['y']
+    
     # print("Lane arr: ", control_info["lane_arr"])
     
     # calculate road direction
@@ -1523,6 +1563,9 @@ def get_sub_state():
                     or (lanes_map[id][0]['y'] >= local_info['position']['y'] and local_info['position']['y'] >= lanes_map[id][-1]['y'])):
                 cnt = 0
                 dis = 100000000
+                # print("Ego position: ", local_info['position'])
+                # print("Lane First Waypoint: ", lanes_map[id][0])
+                # print("Lane Last Waypoint: ", lanes_map[id][-1])
                 for i in range(0, len(lanes_map[id]) - 1):
                     cur_dis = cal_dis(local_info['position']['x'], local_info['position']
                                       ['y'], 0, lanes_map[id][i]['x'], lanes_map[id][i]['y'], 0)
@@ -1629,7 +1672,7 @@ def get_sub_state():
         
     # print("Current Signals: ", current_signals)
         
-    return control_info['acceleration'], brake_percentage
+    return control_info['acceleration'], brake_percentage, orient
 
 
 @app.route('/LGSVL/Status/Realistic', methods=['GET'])
