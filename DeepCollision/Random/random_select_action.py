@@ -151,47 +151,48 @@ requests.post("http://localhost:8933/LGSVL/SetObTime?observation_time=6")
 action_space = get_action_space()['command']
 action_space_size = action_space['num']
 
-title = ["Episode", "State", "Action", "Violation Rate", "Collision_uid", "Violation Rate List" "Done"]
-df_title = pd.DataFrame([title])
-file_name = str(int(time.time()))
-df_title.to_csv('../ExperimentData/Random-or-Non-random Analysis/Data Random/random_6s_road1_' + file_name + '.csv', mode='w', header=False, index=None)
+for loop in range(0, 5):
+    title = ["Episode", "State", "Action", "Violation Rate", "Collision_uid", "Violation Rate List" "Done"]
+    df_title = pd.DataFrame([title])
+    file_name = str(int(time.time()))
+    df_title.to_csv('../ExperimentData/Random-or-Non-random Analysis/Data Random/random_6s_road1_' + file_name + '.csv', mode='w', header=False, index=None)
 
-iteration = 0
-step = 0
-print("Start episode 0")
-while True:
-    # Random select action to execute
+    iteration = 0
+    step = 0
+    print("Start episode 0")
+    while True:
+        # Random select action to execute
 
-    s = get_environment_state()
-    
-    retry = True
-    
-    while(retry):
-    
-        retry = False
-    
-        try:
-            api_id = random.randint(0, action_space_size - 1)
-            _, violation_rate, done, vioRate_list, collision_uid, = calculate_reward(api_id)
-        except json.JSONDecodeError as e:
-            print(e)
-            retry = True
+        s = get_environment_state()
         
+        retry = True
+        
+        while(retry):
+        
+            retry = False
+        
+            try:
+                api_id = random.randint(0, action_space_size - 1)
+                _, violation_rate, done, vioRate_list, collision_uid, = calculate_reward(api_id)
+            except json.JSONDecodeError as e:
+                print(e)
+                retry = True
+            
 
 
-    print('api_id, violation_rate, violation_rate_list, done: ', api_id, violation_rate, vioRate_list, done)
+        print('api_id, violation_rate, violation_rate_list, done: ', api_id, violation_rate, vioRate_list, done)
 
-    pd.DataFrame([[iteration, s, api_id, probability, collision_uid, probability_list, done]]).to_csv(
-        '../ExperimentData/Random-or-Non-random Analysis/Data Random/random_6s_road1_' + file_name + '.csv',
-        mode='a',
-        header=False, index=None)
+        pd.DataFrame([[iteration, s, api_id, violation_rate, collision_uid, vioRate_list, done]]).to_csv(
+            '../ExperimentData/Random-or-Non-random Analysis/Data Random/random_6s_road1_' + file_name + '.csv',
+            mode='a',
+            header=False, index=None)
 
-    step += 1
-    if done:
-        # break
-        requests.post("http://localhost:8933/LGSVL/LoadScene?scene=bd77ac3b-fbc3-41c3-a806-25915c777022&road_num=" + '1')
-        iteration += 1
-        step = 0
-        print("Start episode ", iteration)
-        if iteration == 16:
-            break
+        step += 1
+        if done:
+            # break
+            requests.post("http://localhost:8933/LGSVL/LoadScene?scene=bd77ac3b-fbc3-41c3-a806-25915c777022&road_num=" + '1')
+            iteration += 1
+            step = 0
+            print("Start episode ", iteration)
+            if iteration == 16:
+                break
