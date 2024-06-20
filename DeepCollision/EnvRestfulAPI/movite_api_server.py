@@ -221,7 +221,7 @@ def get_type(class_name):
 # calculate measures thread, use in multi-thread
 
 
-def calculate_measures_thread(state_list, ego_state, isNpcVehicle, TTC_list, vioRate_list,
+def calculate_measures_thread(state_list, ego_state, isNpcVehicle, TTC_list, vioRate_list, agent_uid,
                               distance_list, probability_list, current_signals, ego_curr_acc, brake_percentage,
                               road, next_road, p_lane_id, prev_tlight_sign_, orientation, mid_point=None, collision_tag_=False):
 
@@ -229,8 +229,8 @@ def calculate_measures_thread(state_list, ego_state, isNpcVehicle, TTC_list, vio
     
     # print(prev_tlight_sign_)
 
-    TTC, distance, probability2, vioRate, tlight_sign = calculate_measures(
-        state_list, ego_state, isNpcVehicle, current_signals, ego_curr_acc, brake_percentage,
+    TTC, distance, probability2, tlight_sign, vioRate = calculate_measures(
+        state_list, ego_state, isNpcVehicle, current_signals, ego_curr_acc, brake_percentage, agent_uid,
         road, next_road, p_lane_id, p_tlight_sign, orientation, mid_point, True)
 
     prev_tlight_sign_ = tlight_sign
@@ -308,7 +308,9 @@ def calculate_metrics(agents, ego):
 
         state_list = []
         isNpcVehicle = []
+        agent_uid = []
         for j in range(1, len(agents)):
+            agent_uid.append(agents[j].uid)
             state_ = agents[j].state
             state_list.append(state_)
             isNpc = (isinstance(agents[j], NpcVehicle))
@@ -342,7 +344,7 @@ def calculate_metrics(agents, ego):
 
         thread = threading.Thread(
             target=calculate_measures_thread,
-            args=(state_list, ego_state, isNpcVehicle, TTC_list, vioRate_list,
+            args=(state_list, ego_state, isNpcVehicle, TTC_list, vioRate_list, agent_uid,
                   distance_list, probability_list, current_signals, ego_curr_acc, 
                   brake_percentage, road, next_road, p_lane_id, prev_tlight_sign, orientation, MID_POINT, collision_tag,)
         )
@@ -377,12 +379,31 @@ def calculate_metrics(agents, ego):
         doc.writexml(fp, addindent='\t', newl='\n', encoding="utf-8")
 
     print("Probability List: ", probability_list)
-    print("Violation Rate List: ", vioRate_list)
+    # print("Violation Rate List: ", vioRate_list)
     
     probability = round(max(probability_list), 6)
-    vioRate = round(max(vioRate_list), 6)
+    
+    # print("Violation rate list: ", vioRate_list)
+    
+    transposed_vio = zip(*vioRate_list)
+    max_values = [max(column) for column in transposed_vio]
+    
+    # print("Violation rate: ", max_values)
+    
+    cnt_vio = 0
+    total_rate = 0
+    
+    for vio in max_values:
+        if vio > 0:
+            cnt_vio += 1
+            total_rate += vio
+    
+    if cnt_vio == 0:
+        cnt_vio = 1
+    
+    vioRate = total_rate / cnt_vio
     return {'TTC': TTC_list, 'distance': distance_list, 'collision_type': collision_type, 'collision_uid': collision_uid_,
-            'collision_speed': collision_speed_, 'probability': probability_list, 'vioRate': vioRate_list}  # 'uncomfortable': uncomfortable,
+            'collision_speed': collision_speed_, 'probability': probability_list, 'vioRate': max_values}  # 'uncomfortable': uncomfortable,
 
 
 @app.route('/LGSVL')

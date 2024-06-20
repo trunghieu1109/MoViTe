@@ -27,7 +27,7 @@ pred_confi = None
 collide_with_obstacle = False
 position_pre_obstacle_collision = None
 previous_weather_and_time_step = -5
-current_step = 0
+# current_step = 0
 
 goal = [341.1, 35.5, 289.4]
 
@@ -110,7 +110,7 @@ print("Number of action: ", N_ACTIONS)
 print("Number of state: ", N_STATES)
 
 HyperParameter = dict(BATCH_SIZE=32, GAMMA=0.9, EPS_START=1, EPS_END=0.1, EPS_DECAY=4000, TARGET_UPDATE=100,
-                      lr=3*1e-3, INITIAL_MEMORY=2000, MEMORY_SIZE=1000, SCHEDULER_UPDATE=100, WEIGHT_DECAY=1e-5,
+                      lr=3*1e-3, INITIAL_MEMORY=1000, MEMORY_SIZE=1000, SCHEDULER_UPDATE=100, WEIGHT_DECAY=1e-5,
                       LEARNING_RATE_DECAY=0.8)
 
 print("MEMORY SIZE: ", HyperParameter["MEMORY_SIZE"])
@@ -160,7 +160,8 @@ class DQN(object):
     def lr_lambda_(self, epoch):
         return HyperParameter['LEARNING_RATE_DECAY'] ** epoch
 
-    def choose_action(self, x):
+    def choose_action(self, x, current_step, prev_step):
+        print("Current Step: ", current_step)
         x = torch.unsqueeze(torch.FloatTensor(x), 0)
         eps_threshold = HyperParameter['EPS_END'] + (
                 HyperParameter['EPS_START'] - HyperParameter['EPS_END']) * math.exp(
@@ -189,15 +190,16 @@ class DQN(object):
             is_weather_time_action = (0 <= action and action <= 12)
             
             if is_weather_time_action:
-                if current_step - previous_weather_and_time_step >= 5:
+                if current_step - prev_step >= 5:
                     if action == self.previous_weather_and_time:
                         topk_values, topk_indices = torch.topk(actions_value, k=2)
                         action = topk_indices[0][1].data.numpy()
                 else:
-                    topk_values, topk_indices = torch.topk(actions_value, k=6)
+                    topk_values, topk_indices = torch.topk(actions_value, k=5)
                     cnt = 1
                     while cnt <= 5:
                         action = topk_indices[0][cnt].data.numpy()
+                        # print("action: ", action)
                         if not (0 <= action and action <= 12):
                             break
                         
@@ -212,7 +214,7 @@ class DQN(object):
             is_weather_time_action = (0 <= action and action <= 12)
             
             if is_weather_time_action:
-                if current_step - previous_weather_and_time_step >= 5:
+                if current_step - prev_step >= 5:
                     if action == self.previous_weather_and_time:
                         action = np.random.randint(0, N_ACTIONS)
                 else:
@@ -286,7 +288,7 @@ def execute_action(action_id):
         obstacle_uid = response.json()['collision_uid']
     except Exception as e:
         print(e)
-        vioRate_list = [-1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -1.0]
+        vioRate_list = [-1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -1.0]
         
     return vioRate_list, obstacle_uid
 
@@ -378,13 +380,13 @@ if __name__ == '__main__':
     if current_eps != '':
         print("Continue at episode: " + current_eps)
         
-        with open('./model/movite_tartu_new_sd/rl_network_' + current_eps + '_road' + road_num + '.pkl', "rb") as file:
+        with open('./model/movite_tartu_1000_MMS/rl_network_' + current_eps + '_road' + road_num + '.pkl', "rb") as file:
             dqn = pickle.load(file)
         # print(dqn.buffer_memory.real_size, dqn.memory_counter, dqn.steps_done, dqn.learn_step_counter)
-        dqn.eval_net.load_state_dict(torch.load('./model/movite_tartu_new_sd/eval_net_' + current_eps + '_road' + road_num + '.pt'))
-        dqn.target_net.load_state_dict(torch.load('./model/movite_tartu_new_sd/target_net_' + current_eps + '_road' + road_num + '.pt'))
+        dqn.eval_net.load_state_dict(torch.load('./model/movite_tartu_1000_MMS/eval_net_' + current_eps + '_road' + road_num + '.pt'))
+        dqn.target_net.load_state_dict(torch.load('./model/movite_tartu_1000_MMS/target_net_' + current_eps + '_road' + road_num + '.pt'))
         # restore memory buffer
-        with open('./model/movite_tartu_new_sd/memory_buffer_' + current_eps + '_road' + road_num + '.pkl', "rb") as file:
+        with open('./model/movite_tartu_1000_MMS/memory_buffer_' + current_eps + '_road' + road_num + '.pkl', "rb") as file:
             dqn.buffer_memory = pickle.load(file)
             
         print(dqn.buffer_memory.real_size, dqn.learn_step_counter, dqn.steps_done)
@@ -433,7 +435,7 @@ if __name__ == '__main__':
             while True:
                 # env.render()
                 current_step = step
-                action, _ = dqn.choose_action(s)
+                action, _ = dqn.choose_action(s, current_step, previous_weather_and_time_step)
                 if 0 <= action and action <= 12:
                     previous_weather_and_time_step = step
                     
@@ -529,17 +531,17 @@ if __name__ == '__main__':
                     # print(dqn.eval_net.state_dict())
                     # print(dqn.target_net.state_dict())
                     torch.save(dqn.eval_net.state_dict(),
-                               './model/movite_tartu_new_sd/eval_net_' + str(
+                               './model/movite_tartu_1000_MMS/eval_net_' + str(
                                    i_episode + 1) + '_road' + road_num + '.pt')
                     torch.save(dqn.target_net.state_dict(),
-                               './model/movite_tartu_new_sd/target_net_' + str(
+                               './model/movite_tartu_1000_MMS/target_net_' + str(
                                    i_episode + 1) + '_road' + road_num + '.pt')
                     
-                    with open('./model/movite_tartu_new_sd/memory_buffer_' + str(
+                    with open('./model/movite_tartu_1000_MMS/memory_buffer_' + str(
                                    i_episode + 1) + '_road' + road_num + '.pkl', "wb") as file:
                         pickle.dump(dqn.buffer_memory, file)
                         
-                    with open('./model/movite_tartu_new_sd/rl_network_' + str(
+                    with open('./model/movite_tartu_1000_MMS/rl_network_' + str(
                                    i_episode + 1) + '_road' + road_num + '.pkl', "wb") as file:
                         pickle.dump(dqn, file)
                     

@@ -5,7 +5,7 @@ import pandas as pd
 import time
 import numpy as np
 import torch 
-from deepcollision_per import DQN
+from movite_training_model import DQN
 import json
 
 # Execute action
@@ -15,28 +15,22 @@ def execute_action(action_id):
     response = requests.post(api)
     obstacle_uid = None
     try:
-        probability_list = response.json()['probability']
+        vioRate_list = response.json()['vioRate']
         obstacle_uid = response.json()['collision_uid']
     except Exception as e:
         print(e)
-        probability_list = [-1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -1.0]
+        vioRate_list = [-1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -1.0]
         
-    return probability_list, obstacle_uid
+    return vioRate_list, obstacle_uid
 
-
-latitude_space = []
 check_num = 5  # here depend on observation time: 2s->10, 4s->6, 6s->
-latitude_position = 0
 
 position_space = []
 position_space_size = 0
 
-per_confi = None
-pred_confi = None
-
+previous_weather_and_time_step = -5
 
 def judge_done():
-    global latitude_position
     global position_space_size
     global position_space
     judge = False
@@ -70,32 +64,21 @@ def calculate_reward(api_id):
     :param api_id:
     :return:
     """
-    global latitude_position
-    collision_probability_per_step, collision_uid = execute_action(api_id)
+    vioRate_list, collision_uid = execute_action(api_id)
     observation = None
     action_reward = 0
-    # episode_done = False
-    collision_probability = 0
+    violation_rate = 0
     # Reward is calculated based on collision probability.
-    collision_info = (requests.get("http://localhost:8933/LGSVL/Status/CollisionInfo")).content.decode(
-        encoding='utf-8')
     episode_done = judge_done()
 
-    if collision_info != 'None':
-        collision_probability = 1
-        # episode_done = True
-    elif collision_info == "None":
-        collision_probability = round(float(
-            (requests.get("http://localhost:8933/LGSVL/Status/CollisionProbability")).content.decode(
-                encoding='utf-8')), 3)
-        # action_reward = collision_probability.__float__()
-    return observation, collision_probability, episode_done, collision_info, collision_probability_per_step, collision_uid
+    violation_rate = round(float(
+        (requests.get("http://localhost:8933/LGSVL/Status/ViolationRate")).content.decode(
+            encoding='utf-8')), 6)
+
+    return observation, violation_rate, episode_done, vioRate_list, collision_uid
 
 
 def get_environment_state():
-    
-    global per_confi
-    global pred_confi
     
     r = requests.get("http://localhost:8933/LGSVL/Status/Environment/State")
     a = r.json()
@@ -155,17 +138,12 @@ def get_environment_state():
     state[40] = a['steering_target']
     state[41] = a['acceleration']
     state[42] = a['gear']
-    
-    
-    # pd.DataFrame([[a['per'], a['pred']]]).to_csv("./log/max_distance_obs_" + file_name + ".csv", mode='a', header=False, index=None)
 
     return state
 
 
 for hieu in range(0, 5):
     # initialize the environment
-    # requests.post("http://localhost:8933/LGSVL/LoadScene?scene=SanFrancisco")
-    # requests.post("http://localhost:8933/LGSVL/LoadScene?scene=aae03d2a-b7ca-4a88-9e41-9035287a12cc&road_num=" + '1')
     requests.post("http://localhost:8933/LGSVL/LoadScene?scene=bd77ac3b-fbc3-41c3-a806-25915c777022&road_num=" + '1')
     requests.post("http://localhost:8933/LGSVL/SetObTime?observation_time=6")
 
@@ -174,42 +152,20 @@ for hieu in range(0, 5):
 
     print("Number of actions: ", action_space_size)
 
-    current_eps = str(400)
+    current_eps = str(200)
     road_num = str(1)
 
     file_name = str(int(time.time()))
 
     dqn = DQN()
 
-    # dqn.eval_net.load_state_dict(torch.load('./model/DQN_local_ver_3_experiment_6' + 's/eval_net_' + current_eps + '_road' + road_num + '.pt'))
-    # dqn.target_net.load_state_dict(torch.load('./model/DQN_local_ver_3_experiment_6' +'s/target_net_' + current_eps + '_road' + road_num + '.pt'))
+    dqn.eval_net.load_state_dict(torch.load('./model/movite_tartu_ver_2/eval_net_' + current_eps + '_road' + road_num + '.pt'))
+    dqn.target_net.load_state_dict(torch.load('./model/movite_tartu_ver_2/target_net_' + current_eps + '_road' + road_num + '.pt'))
 
-    # dqn.eval_net.load_state_dict(torch.load('./model/DQN_per_experiment_6' + 's/eval_net_' + current_eps + '_road' + road_num + '.pt'))
-    # dqn.target_net.load_state_dict(torch.load('./model/DQN_per_experiment_6' +'s/target_net_' + current_eps + '_road' + road_num + '.pt'))
-
-    # dqn.eval_net.load_state_dict(torch.load('./model/DQN_experiment_customized_6' + 's_161/eval_net_' + current_eps + '_road' + road_num + '.pt'))
-    # dqn.target_net.load_state_dict(torch.load('./model/DQN_experiment_customized_6' + 's_161/target_net_' + current_eps + '_road' + road_num + '.pt'))
-
-    dqn.eval_net.load_state_dict(torch.load('./model/innercollision_tartu_new_sd/eval_net_' + current_eps + '_road' + road_num + '.pt'))
-    dqn.target_net.load_state_dict(torch.load('./model/innercollision_tartu_new_sd/target_net_' + current_eps + '_road' + road_num + '.pt'))
-
-    # dqn.eval_net.load_state_dict(torch.load('./model/DQN_per_pred_ver_2_experiment_6' + 's/eval_net_' + current_eps + '_road' + road_num + '.pt'))
-    # dqn.target_net.load_state_dict(torch.load('./model/DQN_per_pred_ver_2_experiment_6' +'s/target_net_' + current_eps + '_road' + road_num + '.pt'))
-
-    title = ["Episode", "State", "Action", "Choosing_Type", "Collision_Probability", "Collision_uid", "Collision_Probability_Per_Step", "Done"]
+    title = ["Episode", "State", "Action", "Choosing_Type", "Violation Rate", "Violation Rate List", "Collision_uid", "Done"]
     df_title = pd.DataFrame([title])
-    # file_name = str(int(time.time()))
-    # df_title.to_csv('../ExperimentData/Analysis/Data_DQN/dqn_6s_road1_' + current_eps + 'eps_' + file_name + '.csv', mode='w', header=False, index=None)
-    # df_title.to_csv('../ExperimentData/Analysis/Data_DQN_local_ver_3/dqn_6s_road1_' + file_name + '.csv', mode='w', header=False, index=None)
-    # df_title.to_csv('../ExperimentData/Analysis/Data_DQN_per/dqn_6s_road1_' + file_name + '.csv', mode='w', header=False, index=None)
-    df_title.to_csv('../ExperimentData/Random-or-Non-random Analysis/innercollision_tartu_new_sd/dqn_6s_road1_' + current_eps + 'eps_' + file_name + '_0.2eps.csv', mode='w', header=False, index=None)
-
-
-    # title3 = ["is_detected", "max_distance"]
-    # pd.DataFrame([title3]).to_csv("./log/max_distance_obs_" + file_name + ".csv", mode='w', header=False, index=None)
-
-    # title2 = ['per_confi', 'pred_confi', 'reward']
-    # pd.DataFrame([title2]).to_csv("./log/per_pred_reward_" + file_name + '.csv', mode='w', header=False, index=None)
+    
+    df_title.to_csv('../ExperimentData/Random-or-Non-random Analysis/movite_tartu_ver_2/dqn_6s_road1_' + current_eps + 'eps_' + file_name + '_0.2eps.csv', mode='w', header=False, index=None)
 
     iteration = 0
     step = 0
@@ -217,16 +173,17 @@ for hieu in range(0, 5):
     state_ = []
     action_ = []
     type_ = []
-    probability_ = []
+    vioRate_ = []
+    vioArr_ = []
     collision_uid_ = []
-    collision_probability_per_step_ = []
     done_ = []
     isCollision = False
     
     while True:
         # Random select action to execute
-
+    
         s = get_environment_state()
+        current_step = step
             
         retry = True
         
@@ -235,53 +192,31 @@ for hieu in range(0, 5):
             retry = False
         
             try:
-                action, type = dqn.choose_action(s)
-                _, probability, done, _, collision_probability_per_step, collision_uid, = calculate_reward(action)
+                action, type = dqn.choose_action(s, current_step, previous_weather_and_time_step)
+                _, vioRate, done, vioRate_list, collision_uid, = calculate_reward(action)
             except json.JSONDecodeError as e:
                 print(e)    
                 retry = True 
+                
+        if 0 <= action and action <= 12:
+            previous_weather_and_time_step = step
 
-        print('api_id, probability, done: ', action, probability, done)
-        pd.DataFrame([[action, probability, collision_probability_per_step, done]]).to_csv('experiment_data/dqn_record_' + file_name + '.csv', mode='a', header=False,
-                                                        index=None)
-
-        # pd.DataFrame([[iteration, s, action, probability, collision_probability_per_step, done]]).to_csv(
-        #    '../ExperimentData/Analysis/Data_DQN_local_ver_3/dqn_6s_road1_' + file_name + '.csv',
-        #    mode='a',
-        #    header=False, index=None)
+        print('api_id, vioRate, vioRate_list, done: ', action, vioRate, vioRate_list, done)
         
-        # pd.DataFrame([[iteration, s, action, probability, collision_probability_per_step, done]]).to_csv(
-        #    '../ExperimentData/Analysis/Data_DQN_per/dqn_6s_road1_' + file_name + '.csv',
-        #    mode='a',
-        #    header=False, index=None)
-        
-        # pd.DataFrame([[iteration, s, action, probability, collision_uid, collision_probability_per_step, done]]).to_csv(
-        #     '../ExperimentData/Analysis/Data_DQN/dqn_6s_road1_' + current_eps + 'eps_' + file_name + '.csv',
-        #     mode='a',
-        #     header=False, index=None)
-        
-        if probability == 1.0:
-            isCollision = True
+        for beh_vio in vioRate_list:
+            if beh_vio == 1:
+                isCollision = True
         
         state_.append(s)
         action_.append(action)
         type_.append(type)
-        probability_.append(probability)
+        vioRate_.append(vioRate)
         collision_uid_.append(collision_uid)
-        collision_probability_per_step_.append(collision_probability_per_step)
+        vioArr_.append(vioRate_list)
         done_.append(done)
-        
-        # pd.DataFrame([[iteration, s, action, type, probability, collision_uid, collision_probability_per_step, done]]).to_csv(
-        #     '../ExperimentData/Random-or-Non-random Analysis/Data_DQN_default_1000MS/dqn_6s_road1_' + current_eps + 'eps_' + file_name + '_0.2eps.csv',
-        #     mode='a',
-        #     header=False, index=None)
-        
-        # pd.DataFrame([[per_confi, pred_confi, probability]]).to_csv("./log/per_pred_reward_" + file_name + '.csv', mode='a', header=False, index=None)
 
         step += 1
         if done:
-            # break
-            # requests.post("http://localhost:8933/LGSVL/LoadScene?scene=aae03d2a-b7ca-4a88-9e41-9035287a12cc&road_num=" + '1')
             requests.post("http://localhost:8933/LGSVL/LoadScene?scene=bd77ac3b-fbc3-41c3-a806-25915c777022&road_num=" + '1')
 
             print("Length of episode: ", len(state_))
@@ -291,16 +226,16 @@ for hieu in range(0, 5):
                 else:
                     print("Episode complete")
                     for iter in range(0, len(state_)):
-                        pd.DataFrame([[iteration, state_[iter], action_[iter], type_[iter], probability_[iter], collision_uid_[iter], collision_probability_per_step_[iter], done_[iter]]]).to_csv(
-                            '../ExperimentData/Random-or-Non-random Analysis/innercollision_tartu_new_sd/dqn_6s_road1_' + current_eps + 'eps_' + file_name + '_0.2eps.csv',
+                        pd.DataFrame([[iteration, state_[iter], action_[iter], type_[iter], vioRate_[iter], vioArr_[iter], collision_uid_[iter], done_[iter]]]).to_csv(
+                            '../ExperimentData/Random-or-Non-random Analysis/movite_tartu_ver_2/dqn_6s_road1_' + current_eps + 'eps_' + file_name + '_0.2eps.csv',
                             mode='a',
                             header=False, index=None)
                     iteration += 1
             else:
                 print("Episode complete")
                 for iter in range(0, len(state_)):
-                    pd.DataFrame([[iteration, state_[iter], action_[iter], type_[iter], probability_[iter], collision_uid_[iter], collision_probability_per_step_[iter], done_[iter]]]).to_csv(
-                        '../ExperimentData/Random-or-Non-random Analysis/innercollision_tartu_new_sd/dqn_6s_road1_' + current_eps + 'eps_' + file_name + '_0.2eps.csv',
+                    pd.DataFrame([[iteration, state_[iter], action_[iter], type_[iter], vioRate_[iter], vioArr_[iter], collision_uid_[iter], done_[iter]]]).to_csv(
+                        '../ExperimentData/Random-or-Non-random Analysis/movite_tartu_ver_2/dqn_6s_road1_' + current_eps + 'eps_' + file_name + '_0.2eps.csv',
                         mode='a',
                         header=False, index=None)
                 iteration += 1
@@ -308,10 +243,13 @@ for hieu in range(0, 5):
             state_ = []
             action_ = []
             type_ = []
-            probability_ = []
+            vioRate_ = []
             collision_uid_ = []
-            collision_probability_per_step_ = []
+            vioArr_ = []
             done_ = []
+            current_step = 0
+            previous_weather_and_time_step = -5
+            dqn.previous_weather_and_time = None
             isCollision = False
             print("Start episode ", iteration)
             if iteration == 16:

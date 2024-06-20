@@ -352,7 +352,7 @@ def get_world_acc(world_speed, sim_speed, sim_acc, coord, world_vel):
     return world_vel['vy'] / world_speed * world_acc
 
 # @jit(nopython=True, fastmath=True)
-def calculate_measures(state_list, ego_state, isNpcVehicle, current_signals, ego_curr_acc, brake_percentage, 
+def calculate_measures(state_list, ego_state, isNpcVehicle, current_signals, ego_curr_acc, brake_percentage, agent_uid,
                        road, next_road, p_lane_id, p_tlight_sign, orientation, mid_point = None, dis_tag = True):
     
     ego_transform = ego_state.transform
@@ -387,9 +387,10 @@ def calculate_measures(state_list, ego_state, isNpcVehicle, current_signals, ego
     proC_list = [0]
     vioRate_list = [0]
     
-    reaction_time = 1.0
+    reaction_time = 0.5
     
     for i in range(0, len(state_list)):
+        # print("*" * 80, agent_uid[i])
         transform = state_list[i].transform
         state = state_list[i]
         a_position = np.array([transform.position.x, transform.position.y, transform.position.z])
@@ -439,7 +440,14 @@ def calculate_measures(state_list, ego_state, isNpcVehicle, current_signals, ego
                     abs(pow(ego_velocity[0], 2) / ego_acc[0] - pow(a_velocity[0], 2) / agent_acc[0])) + a_velocity[0] * reaction_time + 5
         else:
             loSD = 1 / 2 * (
-                abs(pow(ego_velocity[0], 2) / ego_acc[0] + pow(a_velocity[0], 2) / agent_acc[0])) + ego_velocity[0] + ego_velocity[0] + 5
+                abs(pow(ego_velocity[0], 2) / ego_acc[0] + pow(a_velocity[0], 2) / agent_acc[0])) + 2
+            
+            # print("Absolute lo distance: ", abs(pow(ego_velocity[0], 2) / ego_acc[0] + pow(a_velocity[0], 2) / agent_acc[0]))
+            
+            
+            if ego_velocity[0] * (ego_position[0] - a_position[0]) > 0:
+                loSD = 0
+                
         
         # print("Safety Distance Lo: ", loSD)
         # print("Current Distance Lo: ", abs(ego_position[0] - a_position[0]))
@@ -482,7 +490,12 @@ def calculate_measures(state_list, ego_state, isNpcVehicle, current_signals, ego
                     abs(pow(ego_velocity[2], 2) / ego_acc[2] - pow(a_velocity[2], 2) / agent_acc[2])) + a_velocity[2] * reaction_time + 5
         else:
             laSD = 1 / 2 * (
-                abs(pow(ego_velocity[2], 2) / ego_acc[2] + pow(a_velocity[2], 2) / agent_acc[2])) + ego_velocity[2] + ego_velocity[2] + 5
+                abs(pow(ego_velocity[2], 2) / ego_acc[2] + pow(a_velocity[2], 2) / agent_acc[2])) + 2
+            
+            # print("Absolute la distance: ", abs(pow(ego_velocity[2], 2) / ego_acc[2] + pow(a_velocity[2], 2) / agent_acc[2]))
+            
+            if ego_velocity[2] * (ego_position[2] - a_position[2]) > 0:
+                laSD = 0
 
         # print("Safety Distance La: ", laSD)
         # print("Current Distance La: ", abs(ego_position[2] - a_position[2]))
@@ -515,6 +528,16 @@ def calculate_measures(state_list, ego_state, isNpcVehicle, current_signals, ego
     
     total_rate = 0
     
+    np_condition = []
+    
+    for i in range(0, 6):
+        np_condition.append(condition[i] * vioRate_dt)
+    
+    np_condition.append(proC_dt)
+    
+    if condition[5] == 1.0:
+        np_condition[5] = 1.0
+    
     # if condition[0]:
     #     print("Passing")
 
@@ -533,31 +556,32 @@ def calculate_measures(state_list, ego_state, isNpcVehicle, current_signals, ego
     if condition[5] == 1:
         print("Run on red light")
         
-    cnt_behavior = 0
+    # cnt_behavior = 0
     
     # print("Violation Rate: ", vioRate_dt)
         
-    for behavior in condition:
+    # for behavior in condition:
         
-        if behavior != 0 and behavior != 1:
-            total_rate += behavior
-        else:
-            total_rate += behavior * vioRate_dt
+    #     if behavior != 0 and behavior != 1:
+    #         total_rate += behavior
+    #     else:
+    #         total_rate += behavior * vioRate_dt
             
-        cnt_behavior += (behavior != 0)
+    #     cnt_behavior += (behavior != 0)
         
-    if (proC_dt > 0):
-        total_rate += proC_dt
-        cnt_behavior += 1
+    # if (proC_dt > 0):
+    #     total_rate += proC_dt
+    #     cnt_behavior += 1
         
-    if (cnt_behavior == 0):
-        cnt_behavior = 0.001
+    # if (cnt_behavior == 0):
+    #     cnt_behavior = 0.001
     
-    vioRate_avg = total_rate / cnt_behavior
+    # vioRate_avg = total_rate / cnt_behavior
     
     # print("Violation Rate Avg: ", vioRate_avg)
+    # print("Violation Rate: ", np_condition)
 
-    return TTC, distance, proC_dt, vioRate_avg, curr_tlight_sign
+    return TTC, distance, proC_dt, curr_tlight_sign, np_condition
 
 
 if __name__ == "__main__":
