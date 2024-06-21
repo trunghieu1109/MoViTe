@@ -142,9 +142,6 @@ def get_environment_state():
     
     return state
 
-
-# initialize the environment
-# requests.post("http://localhost:8933/LGSVL/LoadScene?scene=SanFrancisco")
 requests.post("http://localhost:8933/LGSVL/LoadScene?scene=bd77ac3b-fbc3-41c3-a806-25915c777022&road_num=" + '1')
 requests.post("http://localhost:8933/LGSVL/SetObTime?observation_time=6")
 
@@ -152,7 +149,7 @@ action_space = get_action_space()['command']
 action_space_size = action_space['num']
 
 for loop in range(0, 5):
-    title = ["Episode", "State", "Action", "Violation Rate", "Collision_uid", "Violation Rate List" "Done"]
+    title = ["Episode", "Step", "State", "Action", "Violation Rate", "Collision_uid", "Violation Rate List" "Done"]
     df_title = pd.DataFrame([title])
     file_name = str(int(time.time()))
     df_title.to_csv('../ExperimentData/Random-or-Non-random Analysis/Data Random/random_6s_road1_' + file_name + '.csv', mode='w', header=False, index=None)
@@ -182,7 +179,7 @@ for loop in range(0, 5):
 
         print('api_id, violation_rate, violation_rate_list, done: ', api_id, violation_rate, vioRate_list, done)
 
-        pd.DataFrame([[iteration, s, api_id, violation_rate, collision_uid, vioRate_list, done]]).to_csv(
+        pd.DataFrame([[iteration, step, s, api_id, violation_rate, collision_uid, vioRate_list, done]]).to_csv(
             '../ExperimentData/Random-or-Non-random Analysis/Data Random/random_6s_road1_' + file_name + '.csv',
             mode='a',
             header=False, index=None)
