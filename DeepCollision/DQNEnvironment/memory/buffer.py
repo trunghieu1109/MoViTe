@@ -50,18 +50,19 @@ class PrioritizedReplayBuffer:
         sample_idxs, tree_idxs = [], []
         priorities = torch.empty(batch_size, 1, dtype=torch.float)
         
-        prob_ = np.zeros(self.size)
+        # prob_ = np.zeros(self.size)
         
-        total_ = 0
+        # total_ = 0
         
-        for i in range(0, self.size):
-            priority = self.tree.get_prio(i)
-            prob_[i] = priority
-            total_ += prob_[i]
+        # for i in range(0, self.size):
+        #     priority = self.tree.get_prio(i)
+        #     prob_[i] = priority
+        #     total_ += prob_[i]
         
-        prob_ /= total_
+        # prob_ /= total_
             
-        choice = np.random.choice(np.arange(0, self.size), size=batch_size, replace=False, p=prob_)
+        choice = self.tree.sample(batch_size=batch_size)
+        # print("CURRENT CHOICE: ", choice)
 
         # print("Choice: ", choice)
 
@@ -112,15 +113,16 @@ class PrioritizedReplayBuffer:
     def update_priorities(self, data_idxs, priorities):
         if isinstance(priorities, torch.Tensor):
             priorities = priorities.detach().cpu().numpy()
+            
+        # print("Priority Updated: ", priorities)
 
         for data_idx, priority in zip(data_idxs, priorities):
             # The first variant we consider is the direct, proportional prioritization where p_i = |δ_i| + eps,
             # where eps is a small positive constant that prevents the edge-case of transitions not being
             # revisited once their error is zero. (Section 3.3)
             priority = (priority + self.eps) ** self.alpha
-
-            self.tree.update(data_idx, priority)
-            self.max_priority = max(self.max_priority, priority)
+            self.tree.update(data_idx, priority[0])
+            self.max_priority = max(self.max_priority, priority[0])
 
 class PrioritizedViolationReplayBuffer:
     def __init__(self, state_size, action_size, violation_size, buffer_size, eps=1e-2, alpha=0.1, beta=0.1):

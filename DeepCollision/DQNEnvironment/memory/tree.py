@@ -9,6 +9,9 @@
 # Additional useful links
 # Good tutorial about SumTree data structure:  https://adventuresinmachinelearning.com/sumtree-introduction-python/
 # How to represent full binary tree as array: https://stackoverflow.com/questions/8256222/binary-tree-represented-using-array
+
+import numpy as np
+
 class SumTree:
     def __init__(self, size):
         self.nodes = [0] * (2 * size - 1)
@@ -43,6 +46,24 @@ class SumTree:
     def get_prio(self, data_idx):
         idx = data_idx + self.size - 1  # child index in tree array
         return self.nodes[idx]
+    
+    def get_node_idx(self, idx):
+        return idx + self.size - 1
+    
+    def sample(self, batch_size):
+        # idx_data = self.nodes[self.get_node_idx(0):self.get_node_idx(self.size)]
+        prob_ = []
+        
+        start_node = self.get_node_idx(0)
+        end_node = self.get_node_idx(self.size)
+        
+        for i in range(start_node, end_node):
+            # print("Node i: ", self.nodes[i] / self.total)
+            prob_.append(self.nodes[i] / self.total)
+        
+        choice = np.random.choice(np.arange(0, self.size), size=batch_size, replace=False, p=prob_)
+        
+        return choice
     
     def get(self, cumsum):
         assert cumsum <= self.total

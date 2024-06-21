@@ -380,13 +380,13 @@ if __name__ == '__main__':
     if current_eps != '':
         print("Continue at episode: " + current_eps)
         
-        with open('./model/movite_tartu_1000_MMS/rl_network_' + current_eps + '_road' + road_num + '.pkl', "rb") as file:
+        with open('./model/movite_tartu_opt_mb/rl_network_' + current_eps + '_road' + road_num + '.pkl', "rb") as file:
             dqn = pickle.load(file)
         # print(dqn.buffer_memory.real_size, dqn.memory_counter, dqn.steps_done, dqn.learn_step_counter)
-        dqn.eval_net.load_state_dict(torch.load('./model/movite_tartu_1000_MMS/eval_net_' + current_eps + '_road' + road_num + '.pt'))
-        dqn.target_net.load_state_dict(torch.load('./model/movite_tartu_1000_MMS/target_net_' + current_eps + '_road' + road_num + '.pt'))
+        dqn.eval_net.load_state_dict(torch.load('./model/movite_tartu_opt_mb/eval_net_' + current_eps + '_road' + road_num + '.pt'))
+        dqn.target_net.load_state_dict(torch.load('./model/movite_tartu_opt_mb/target_net_' + current_eps + '_road' + road_num + '.pt'))
         # restore memory buffer
-        with open('./model/movite_tartu_1000_MMS/memory_buffer_' + current_eps + '_road' + road_num + '.pkl', "rb") as file:
+        with open('./model/movite_tartu_opt_mb/memory_buffer_' + current_eps + '_road' + road_num + '.pkl', "rb") as file:
             dqn.buffer_memory = pickle.load(file)
             
         print(dqn.buffer_memory.real_size, dqn.learn_step_counter, dqn.steps_done)
@@ -531,17 +531,17 @@ if __name__ == '__main__':
                     # print(dqn.eval_net.state_dict())
                     # print(dqn.target_net.state_dict())
                     torch.save(dqn.eval_net.state_dict(),
-                               './model/movite_tartu_1000_MMS/eval_net_' + str(
+                               './model/movite_tartu_opt_mb/eval_net_' + str(
                                    i_episode + 1) + '_road' + road_num + '.pt')
                     torch.save(dqn.target_net.state_dict(),
-                               './model/movite_tartu_1000_MMS/target_net_' + str(
+                               './model/movite_tartu_opt_mb/target_net_' + str(
                                    i_episode + 1) + '_road' + road_num + '.pt')
                     
-                    with open('./model/movite_tartu_1000_MMS/memory_buffer_' + str(
+                    with open('./model/movite_tartu_opt_mb/memory_buffer_' + str(
                                    i_episode + 1) + '_road' + road_num + '.pkl', "wb") as file:
                         pickle.dump(dqn.buffer_memory, file)
                         
-                    with open('./model/movite_tartu_1000_MMS/rl_network_' + str(
+                    with open('./model/movite_tartu_opt_mb/rl_network_' + str(
                                    i_episode + 1) + '_road' + road_num + '.pkl', "wb") as file:
                         pickle.dump(dqn, file)
                     
