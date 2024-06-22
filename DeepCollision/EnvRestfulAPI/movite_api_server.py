@@ -291,6 +291,7 @@ def calculate_metrics(agents, ego):
         story.setAttribute('name', 'Default')
 
     while i < observation_time / time_step:
+        check_modules_status()
 
         if SAVE_SCENARIO:
             # create scenarios each at time step
@@ -1209,6 +1210,60 @@ def cal_dis(x_a, y_a, z_a, x_b, y_b, z_b):
 def cal_dis_2d(x_a, y_a, x_b, y_b):
     return math.sqrt((x_a - x_b) ** 2 + (y_a - y_b) ** 2)
 
+def check_modules_status():
+    global EGO
+    
+    DREAMVIEW = lgsvl.dreamview.Connection(sim, EGO, APOLLO_HOST, '8999')
+    
+    modules_status = DREAMVIEW.get_module_status()
+    
+    stop = False
+    
+    if modules_status['Localization'] == False:
+        print(20*'*', 'LOCALIZATION STOPPED', 20*'*')
+        DREAMVIEW.enable_module('Localization')
+        print(20*'*', 'LOCALIZATION ENABLED', 20*'*')
+        stop = True
+        
+    if modules_status['Prediction'] == False:
+        print(20*'*', 'PREDICTION STOPPED', 20*'*')
+        DREAMVIEW.enable_module('Prediction')
+        print(20*'*', 'PREDICTION ENABLED', 20*'*')
+        stop = True
+        
+    if modules_status['Transform'] == False:
+        print(20*'*', 'TRANSFORM STOPPED', 20*'*')
+        DREAMVIEW.enable_module('Transform')
+        print(20*'*', 'TRANSFORM ENABLED', 20*'*')
+        stop = True
+        
+    if modules_status['Control'] == False:
+        print(20*'*', 'CONTROL STOPPED', 20*'*')
+        DREAMVIEW.enable_module('Control')
+        print(20*'*', 'CONTROL ENABLED', 20*'*')
+        stop = True
+        
+    if modules_status['Perception'] == False:
+        print(20*'*', 'PERCEPTION STOPPED', 20*'*')
+        DREAMVIEW.enable_module('Perception')
+        print(20*'*', 'PERCEPTION ENABLED', 20*'*')
+        stop = True
+        
+    if modules_status['Routing'] == False:
+        print(20*'*', 'ROUTING STOPPED', 20*'*')
+        DREAMVIEW.enable_module('Routing')
+        print(20*'*', 'ROUTING ENABLED', 20*'*')
+        stop = True
+        
+    if modules_status['Planning'] == False:
+        print(20*'*', 'PLANNING STOPPED', 20*'*')
+        DREAMVIEW.enable_module('Planning')
+        print(20*'*', 'PLANNING ENABLED', 20*'*')
+        stop = True
+        
+    if stop:
+        time.sleep(300)
+
 @app.route('/LGSVL/Status/Environment/State', methods=['GET'])
 def get_environment_state():
     global MID_POINT
@@ -1225,7 +1280,7 @@ def get_environment_state():
     rotation = agents[0].state.rotation
     signal = sim.get_controllable(position, "signal")
     speed = agents[0].state.speed
-
+    
     # calculate advanced external features
 
     num_obs = len(agents) - 1
