@@ -168,21 +168,33 @@ def greedy(road_num, opt):
         vioRate_max = 0
         max_api = 0
         for api in range(0, N_ACTIONS):
-            try:
-                _, violation_rate, done, vioRate_list, obstacle_uid = calculate_reward(api)
-            except Exception as e:
-                print(e)
-            finally:
-                print("Handled Exception")
-            print("Action ", api)
-            if violation_rate > vioRate_max:
-                vioRate_max = violation_rate
-                max_api = api
+            retry = True
+            while retry:
+                retry = False
+                try:
+                    _, violation_rate, done, vioRate_list, obstacle_uid = calculate_reward(api)
+                except Exception as e:
+                    retry = True
+                    print(e)
+                finally:
+                    print("Handled Exception")
+                    
+                if retry:
+                    print(20*'*', "Retry action: ", api, 20*'*')
+                    
+                    requests.post(
+                        "http://localhost:8933/LGSVL/RollBack?ID={}".format(step))
+                    continue
+                    
+                print("Action ", api)
+                if violation_rate > vioRate_max:
+                    vioRate_max = violation_rate
+                    max_api = api
                 
-            print("Action", api, " Rollback")
-            requests.post(
-                "http://localhost:8933/LGSVL/RollBack?ID={}".format(step))
-            print("After rollback")
+                print("Action", api, " Rollback")
+                requests.post(
+                    "http://localhost:8933/LGSVL/RollBack?ID={}".format(step))
+                print("After rollback")
 
         s = get_environment_state()
         print("Before implementing ", str(max_api))
