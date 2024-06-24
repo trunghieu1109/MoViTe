@@ -36,7 +36,7 @@ app.config['PERMANENT_SESSION_LIFETIME'] = timedelta(days=7)
 # create simulator
 
 sim = lgsvl.Simulator(os.environ.get(
-    "SIMUSaveStateLATOR_HOST", "localhost"), 8988)
+    "SIMUSaveStateLATOR_HOST", "localhost"), 8977)
 
 # init variable
 
@@ -242,6 +242,7 @@ def calculate_measures_thread(state_list, ego_state, isNpcVehicle, TTC_list, vio
     distance_list.append(round(distance, 6))
     if collision_tag_:
         probability2 = 1
+        vioRate[6] = 1
     probability_list.append(round(probability2, 6))
     
     vioRate_list.append(vioRate)
