@@ -79,7 +79,9 @@ lane_waypoint = {
         'y': 0,
         'z': 0
     },
-    'lane_id': ""
+    'lane_id': "",
+    'predecessor': "",
+    'successor': ""
 }
 
 next_lane_waypoint = {
@@ -143,6 +145,8 @@ vioRate = 0
 
 prev_tlight_sign = {}
 prev_lane_id = ""
+brake_percentage_queue = []
+brake_count = 0
 
 lane_world_coordinate = {}
 
@@ -281,8 +285,8 @@ def update_violation_weight(violation_list):
             pickle.dump(violation_weight, file)
 
 # calculate measures thread, use in multi-thread
-def calculate_measures_thread(state_list, ego_state, isNpcVehicle, TTC_list, vioRate_list, agent_uid, lane_info_,
-                              distance_list, probability_list, current_signals, ego_curr_acc, brake_percentage,
+def calculate_measures_thread(state_list, ego_state, isNpcVehicle, TTC_list, vioRate_list, agent_uid, lane_info_, successor, predecessor,
+                              distance_list, probability_list, current_signals, ego_curr_acc, prev_brake_percentage, brake_percentage,
                               road, next_road, p_lane_id, prev_tlight_sign_, orientation, mid_point=None, collision_tag_=False):
 
     p_tlight_sign = prev_tlight_sign_
@@ -290,7 +294,7 @@ def calculate_measures_thread(state_list, ego_state, isNpcVehicle, TTC_list, vio
     # print(prev_tlight_sign_)
 
     TTC, distance, probability2, tlight_sign, vioRate = calculate_measures(
-        state_list, ego_state, isNpcVehicle, current_signals, ego_curr_acc, brake_percentage, agent_uid, lane_info_,
+        state_list, ego_state, isNpcVehicle, current_signals, ego_curr_acc, prev_brake_percentage, brake_percentage, agent_uid, lane_info_, successor, predecessor,
         road, next_road, p_lane_id, p_tlight_sign, orientation, mid_point, True)
 
     prev_tlight_sign_ = tlight_sign
@@ -328,6 +332,8 @@ def calculate_metrics(agents, ego):
     global violation_weight
     global equal_prob
     global lane_world_coordinate
+    global brake_percentage_queue
+    global brake_count
 
     collision_object = None
     collision_speed = 0  # 0 indicates there is no collision occurred.
@@ -377,6 +383,19 @@ def calculate_metrics(agents, ego):
         
         # print("Get sub message successfully")
         
+        if len(brake_percentage_queue) == 0:
+            brake_percentage_queue.append(0)
+            brake_percentage_queue.append(0)
+            brake_percentage_queue.append(0)
+            brake_percentage_queue.append(0)
+            
+        # print("Brake Percentage: ", brake_percentage)
+        # print("Brake Queue: ", brake_percentage_queue)
+        # print("Brake Count: ", brake_count)
+        
+        prev_brake_percentage = brake_percentage_queue[brake_count % 4]
+        
+        # print("Prev Brake Percentage: ", prev_brake_percentage)
         
         # print("Ego current acc: ", ego_curr_acc)
         
@@ -424,11 +443,20 @@ def calculate_metrics(agents, ego):
         
         # print("Road direction: ", road)
         # print("Next Road direction: ", next_road)
+        
+        predecessor = None
+        successor = None
+        
+        if lane_waypoint['successor'] != 'none':
+            successor = lane_world_coordinate[lane_waypoint['successor']]
+
+        if lane_waypoint['predecessor'] != 'none':
+            predecessor = lane_world_coordinate[lane_waypoint['predecessor']]
 
         thread = threading.Thread(
             target=calculate_measures_thread,
             args=(state_list, ego_state, isNpcVehicle, TTC_list, vioRate_list, agent_uid, lane_world_coordinate[road['lane_id']],
-                  distance_list, probability_list, current_signals, ego_curr_acc, 
+                  successor, predecessor, distance_list, probability_list, current_signals, ego_curr_acc, prev_brake_percentage,
                   brake_percentage, road, next_road, p_lane_id, prev_tlight_sign, orientation, MID_POINT, collision_tag,)
         )
 
@@ -438,6 +466,11 @@ def calculate_metrics(agents, ego):
             collision_tag = False
 
         i += 1
+        
+        brake_percentage_queue[brake_count % 4] = brake_percentage
+        brake_count = (brake_count + 1) % 4
+        
+        
 
     # if SAVE_SCENARIO:
     collision_type, collision_speed_, collision_uid_ = get_collision_info()
@@ -461,7 +494,7 @@ def calculate_metrics(agents, ego):
             path + "/{}_Scenario_{}.deepscenario".format(EPISODE, time_t), "w")
         doc.writexml(fp, addindent='\t', newl='\n', encoding="utf-8")
 
-    print("Probability List: ", probability_list)
+    # print("Probability List: ", probability_list)
     # print("Violation Rate List: ", vioRate_list)
     
     probability = round(max(probability_list), 6)
@@ -471,7 +504,7 @@ def calculate_metrics(agents, ego):
     transposed_vio = zip(*vioRate_list)
     max_values = [max(column) for column in transposed_vio]
     
-    # print("Violation rate: ", max_values)
+    print("Violation rate: ", max_values)
     
     cnt_vio = 0
     total_rate = 0
@@ -558,8 +591,12 @@ def load_scene():
     global prev_tlight_sign
     global prev_lane_id
     global DREAMVIEW
+    global brake_count
+    global brake_percentage_queue
     prev_lane_id = ""
     prev_tlight_sign = {}
+    brake_count = 0
+    brake_percentage_queue = []
 
     print('obTime: ', observation_time)
     scene = str(request.args.get('scene'))
@@ -1566,6 +1603,42 @@ def get_environment_state():
     #               'timeofday': sim.time_of_day, 'signal': interpreter_signal(signal.current_state)}
     return json.dumps(state_dict)
 
+def gen_lane_world_coord(lane_id):
+    global lane_world_coordinate
+    global lanes_map
+    
+    if lane_id in lane_world_coordinate:
+        return
+    
+    lane_world_coordinate[lane_id] = {}
+    lane_world_coordinate[lane_id]['left_boundary'] = []
+    lane_world_coordinate[lane_id]['right_boundary'] = []
+    lane_world_coordinate[lane_id]['id'] = lane_id
+    
+    # print(len(lanes_map[lane_id]['left_boundary']), len(lanes_map[lane_id]['right_boundary']))
+                    
+    for i in range(0, len(lanes_map[lane_id]['left_boundary'])):
+        gps_waypoint = sim.map_from_gps(None, None, lanes_map[lane_id]['left_boundary'][i]['y'], lanes_map[lane_id]['left_boundary'][i]['x'],  None, None)
+                        
+        waypoint = {
+            'x': gps_waypoint.position.x,
+            'y': gps_waypoint.position.y,
+            'z': gps_waypoint.position.z
+        }
+                        
+        lane_world_coordinate[lane_id]['left_boundary'].append(waypoint)
+                        
+    for i in range(0, len(lanes_map[lane_id]['right_boundary'])):
+        gps_waypoint = sim.map_from_gps(None, None, lanes_map[lane_id]['right_boundary'][i]['y'], lanes_map[lane_id]['right_boundary'][i]['x'],  None, None)
+                        
+        waypoint = {
+            'x': gps_waypoint.position.x,
+            'y': gps_waypoint.position.y,
+            'z': gps_waypoint.position.z
+        }
+                        
+        lane_world_coordinate[lane_id]['right_boundary'].append(waypoint)
+
 def get_sub_state():
     global lanes_map
     global lane_waypoint
@@ -1681,33 +1754,25 @@ def get_sub_state():
                         
                         lane_waypoint['lane_id'] = id
                         
-                if not (id in lane_world_coordinate):
-                    # print("New Lane: ", id)
-                    lane_world_coordinate[id] = {}
-                    lane_world_coordinate[id]['left_boundary'] = []
-                    lane_world_coordinate[id]['right_boundary'] = []
+                        lane_waypoint['successor'] = lanes_map[id]['successor']
+                        lane_waypoint['predecessor'] = lanes_map[id]['predecessor']
+                
+                gen_lane_world_coord(id)
+                
+                # print("Id: ", id)
+                
+                if lane_waypoint['successor'] != 'none':
+                    # print("Successor: ", lane_waypoint['successor'])
+                    gen_lane_world_coord(lane_waypoint['successor'])
+
+                if lane_waypoint['predecessor'] != 'none':
+                    # print("Predecessor: ", lane_waypoint['predecessor'])
+                    gen_lane_world_coord(lane_waypoint['predecessor'])
                     
-                    for i in range(0, len(lanes_map[id]['left_boundary'])):
-                        gps_waypoint = sim.map_from_gps(None, None, lanes_map[id]['left_boundary'][i]['y'], lanes_map[id]['left_boundary'][i]['x'],  None, None)
+                # print(lane_world_coordinate)
+                    
                         
-                        waypoint = {
-                            'x': gps_waypoint.position.x,
-                            'y': gps_waypoint.position.y,
-                            'z': gps_waypoint.position.z
-                        }
-                        
-                        lane_world_coordinate[id]['left_boundary'].append(waypoint)
-                        
-                    for i in range(0, len(lanes_map[id]['right_boundary'])):
-                        gps_waypoint = sim.map_from_gps(None, None, lanes_map[id]['right_boundary'][i]['y'], lanes_map[id]['right_boundary'][i]['x'],  None, None)
-                        
-                        waypoint = {
-                            'x': gps_waypoint.position.x,
-                            'y': gps_waypoint.position.y,
-                            'z': gps_waypoint.position.z
-                        }
-                        
-                        lane_world_coordinate[id]['right_boundary'].append(waypoint)
+                
                         
     # print("Current lane waypoint: ", lane_waypoint)
 

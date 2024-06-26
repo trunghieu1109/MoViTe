@@ -183,7 +183,7 @@ def judge_same_line(a1_position, a1_speed, a1_velocity, a2_position, a2_speed, k
 
     return judge, ego_ahead, TTC
 
-def judge_condition(state_list, ego_state, brake_percentage, ego_acc, road, next_road, p_lane_id, current_signals, p_tlight_sign, orientation):
+def judge_condition(state_list, ego_state, prev_brake_percentage, brake_percentage, ego_acc, road, next_road, p_lane_id, current_signals, p_tlight_sign, orientation):
     ego_transform = ego_state.transform
     ego_position = np.array([ego_transform.position.x, ego_transform.position.y, ego_transform.position.z])
 
@@ -205,7 +205,7 @@ def judge_condition(state_list, ego_state, brake_percentage, ego_acc, road, next
     condition = [0, 0, 0, 0, 0, 0]
     
     #Check braking
-    if brake_percentage >= 40:
+    if brake_percentage - prev_brake_percentage >= 40:
         condition[3] = 1
         
     #Check Speeding
@@ -384,7 +384,7 @@ def check_in_polygon(polygon_p, point):
         
     return True
 
-def isInLine(lane_info_, point):
+def isInLine(lane_info_, successor, predecessor, point):
     for i in range(0, len(lane_info_['left_boundary']) - 1):
         polygon_p = []
         polygon_p.append(lane_info_['left_boundary'][i])
@@ -395,11 +395,41 @@ def isInLine(lane_info_, point):
         if check_in_polygon(polygon_p, point):
             return True
         
+    if successor != None:
+        for i in range(0, len(successor['left_boundary']) - 1):
+            polygon_p = []
+            polygon_p.append(successor['left_boundary'][i])
+            polygon_p.append(successor['left_boundary'][i + 1])
+            polygon_p.append(successor['right_boundary'][i + 1])
+            polygon_p.append(successor['right_boundary'][i])
+            
+            if check_in_polygon(polygon_p, point):
+                return True
+            
+    if predecessor != None:
+        for i in range(0, len(predecessor['left_boundary']) - 1):
+            polygon_p = []
+            polygon_p.append(predecessor['left_boundary'][i])
+            polygon_p.append(predecessor['left_boundary'][i + 1])
+            polygon_p.append(predecessor['right_boundary'][i + 1])
+            polygon_p.append(predecessor['right_boundary'][i])
+            
+            if check_in_polygon(polygon_p, point):
+                return True
+        
     return False
 
 # @jit(nopython=True, fastmath=True)
-def calculate_measures(state_list, ego_state, isNpcVehicle, current_signals, ego_curr_acc, brake_percentage, agent_uid, lane_info_,
-                       road, next_road, p_lane_id, p_tlight_sign, orientation, mid_point = None, dis_tag = True):
+def calculate_measures(state_list, ego_state, isNpcVehicle, current_signals, ego_curr_acc, prev_brake_percentage, brake_percentage, 
+                       agent_uid, lane_info_, successor, predecessor,road, next_road, p_lane_id, p_tlight_sign, 
+                       orientation, mid_point = None, dis_tag = True):
+    
+    # print("Lane: ", lane_info_)
+    # print('\n')
+    # print("Successor: ", successor)
+    # print('\n')
+    # print("Predecessor: ", predecessor)
+    # print('\n')
     
     ego_transform = ego_state.transform
     ego_speed = ego_state.speed
@@ -448,14 +478,16 @@ def calculate_measures(state_list, ego_state, isNpcVehicle, current_signals, ego
         dis_vec = np.array([ego_position[0] - a_position[0], ego_position[1] - a_position[1], ego_position[2] - a_position[2]])
         dist = math.sqrt(dis_vec[0] ** 2 + dis_vec[2] ** 2)
         
-        min_dis = 2
+        min_dis = 1
         
         # print("Check in line")
-        if isInLine(lane_info_, {
+        if isInLine(lane_info_, successor, predecessor, {
             'x': a_position[0],
             'y': a_position[1],
             'z': a_position[2]
         }):
+            
+            # print(10*'*', "Obstacle is in line", 10*'*')
             min_dis = 5
         
         # print("Check complete")
@@ -607,7 +639,7 @@ def calculate_measures(state_list, ego_state, isNpcVehicle, current_signals, ego
     frontVioRate_dt = max(frontVioRate_list)
     behindVioRate_dt = max(behindVioRate_list)
     #Passing 0, Lane Changing 1, Turning 2, Braking 3, Speeding 4, Cruising 5 
-    condition, curr_tlight_sign = judge_condition(state_list, ego_state, brake_percentage, ego_curr_acc, road, next_road, p_lane_id, current_signals, p_tlight_sign, orientation)
+    condition, curr_tlight_sign = judge_condition(state_list, ego_state, prev_brake_percentage, brake_percentage, ego_curr_acc, road, next_road, p_lane_id, current_signals, p_tlight_sign, orientation)
     
     total_rate = 0
     
