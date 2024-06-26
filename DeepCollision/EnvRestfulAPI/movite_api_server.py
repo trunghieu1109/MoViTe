@@ -38,8 +38,15 @@ app.config['PERMANENT_SESSION_LIFETIME'] = timedelta(days=7)
 sim = lgsvl.Simulator(os.environ.get(
     "SIMUSaveStateLATOR_HOST", "localhost"), 8977)
 
+DREAMVIEW = None
+
 # init variable
 
+equal_prob = True
+
+VIOLATION_WEIGHT_DECAY = 0.1
+UPDATE_WEIGHT_FREQ = 10
+update_counter = 0
 collision_object = None
 probability = 0
 time_step_collision_object = None
@@ -71,7 +78,8 @@ lane_waypoint = {
         'x': 0,
         'y': 0,
         'z': 0
-    }
+    },
+    'lane_id': ""
 }
 
 next_lane_waypoint = {
@@ -84,7 +92,8 @@ next_lane_waypoint = {
         'x': 0,
         'y': 0,
         'z': 0
-    }
+    },
+    'lane_id': ""
 }
 
 current_signals = {}
@@ -110,17 +119,23 @@ msg_socket.connect(server_address)
 
 # import lane_information
 
-lanes_map_file = "tartu_lanes.pkl"
+map = 'tartu'
+
+lanes_map_file = "{}_lanes.pkl".format(map)
 lanes_map = None
 
 with open(lanes_map_file, "rb") as file:
     lanes_map = pickle.load(file)
+
+file.close()
     
-signals_map_file = "tartu_signals.pkl"
+signals_map_file = "{}_signals.pkl".format(map)
 signals_map = None
 
 with open(signals_map_file, "rb") as file:
     signals_map = pickle.load(file)
+    
+file.close()
     
 signals_params = {}
 
@@ -129,6 +144,18 @@ vioRate = 0
 prev_tlight_sign = {}
 prev_lane_id = ""
 
+lane_world_coordinate = {}
+
+violation_weight_file = './violation_weight/{}_violation_weight'.format(map)
+
+violation_weight = [1/7, 1/7, 1/7, 1/7, 1/7, 1/7, 1/7]
+
+# if os.path.exists(violation_weight_file):
+#     with open(violation_weight_file, "rb") as file:
+#         violation_weight = pickle.load(file)
+        
+#     file.close()
+    
 
 # on collision callback function
 def on_collision(agent1, agent2, contact):
@@ -218,10 +245,43 @@ def get_type(class_name):
         object_type = 'NPC'
     return object_type
 
+# update violation weights
+def update_violation_weight(violation_list):
+    
+    global violation_weight
+    global VIOLATION_WEIGHT_DECAY
+    global update_counter
+    global UPDATE_WEIGHT_FREQ
+    global violation_weight_file
+    
+    update_counter += 1
+    
+    reduced_part = 0
+    
+    reduced_info = [1, 1, 1, 1, 1, 1, 1]
+    
+    rest = 7
+    
+    for i in range(0, 7):
+        if violation_list[i] == float(1):
+            reduced_info[i] = -1
+            rest -= 1
+            reduced_part += violation_weight[i] * VIOLATION_WEIGHT_DECAY
+            violation_weight[i] = violation_weight[i] * (1 - VIOLATION_WEIGHT_DECAY)
+            
+    for i in range(0, 7):
+        if reduced_info[i] == 1:
+            violation_weight[i] += reduced_part / rest
+
+    if update_counter % UPDATE_WEIGHT_FREQ == 0:
+        
+        print("UPDATE VIOLATION WEIGHT", violation_weight)
+        
+        with open(violation_weight_file, 'wb') as file:
+            pickle.dump(violation_weight, file)
+
 # calculate measures thread, use in multi-thread
-
-
-def calculate_measures_thread(state_list, ego_state, isNpcVehicle, TTC_list, vioRate_list, agent_uid,
+def calculate_measures_thread(state_list, ego_state, isNpcVehicle, TTC_list, vioRate_list, agent_uid, lane_info_,
                               distance_list, probability_list, current_signals, ego_curr_acc, brake_percentage,
                               road, next_road, p_lane_id, prev_tlight_sign_, orientation, mid_point=None, collision_tag_=False):
 
@@ -230,7 +290,7 @@ def calculate_measures_thread(state_list, ego_state, isNpcVehicle, TTC_list, vio
     # print(prev_tlight_sign_)
 
     TTC, distance, probability2, tlight_sign, vioRate = calculate_measures(
-        state_list, ego_state, isNpcVehicle, current_signals, ego_curr_acc, brake_percentage, agent_uid,
+        state_list, ego_state, isNpcVehicle, current_signals, ego_curr_acc, brake_percentage, agent_uid, lane_info_,
         road, next_road, p_lane_id, p_tlight_sign, orientation, mid_point, True)
 
     prev_tlight_sign_ = tlight_sign
@@ -248,8 +308,6 @@ def calculate_measures_thread(state_list, ego_state, isNpcVehicle, TTC_list, vio
     vioRate_list.append(vioRate)
 
 # calculate metrics
-
-
 def calculate_metrics(agents, ego):
     global probability
     global DATETIME_UNIX
@@ -267,6 +325,9 @@ def calculate_metrics(agents, ego):
     global vioRate
     global prev_tlight_sign
     global prev_lane_id
+    global violation_weight
+    global equal_prob
+    global lane_world_coordinate
 
     collision_object = None
     collision_speed = 0  # 0 indicates there is no collision occurred.
@@ -292,17 +353,30 @@ def calculate_metrics(agents, ego):
         story.setAttribute('name', 'Default')
 
     while i < observation_time / time_step:
+        # print("Get modules status")
         check_modules_status()
+        # print("Get modules status successfully")
+        
 
         if SAVE_SCENARIO:
             # create scenarios each at time step
             create_story_by_timestamp(i + 1, doc, story, entities, agents, sim)
 
+        # print("Run simulator")
+
         sim.run(time_limit=time_step)  # , time_scale=2
+        
+        # print("Run successfully")
+        
         
         # print("Simulator run in 0.5s")
         
+        # print("Get sub message")
+        
         ego_curr_acc, brake_percentage, orientation = get_sub_state()
+        
+        # print("Get sub message successfully")
+        
         
         # print("Ego current acc: ", ego_curr_acc)
         
@@ -341,12 +415,19 @@ def calculate_metrics(agents, ego):
             
         prev_lane_id = road['lane_id']
         
+        # print("Road: ", road)
+        # print("Lane boundary world coordinate:", lane_world_coordinate[road['lane_id']])
+        
+        # lane_id_ = road['lane_id']
+        # if lane_id_ == '':
+        #     lane_id_ = next_road['laned']
+        
         # print("Road direction: ", road)
         # print("Next Road direction: ", next_road)
 
         thread = threading.Thread(
             target=calculate_measures_thread,
-            args=(state_list, ego_state, isNpcVehicle, TTC_list, vioRate_list, agent_uid,
+            args=(state_list, ego_state, isNpcVehicle, TTC_list, vioRate_list, agent_uid, lane_world_coordinate[road['lane_id']],
                   distance_list, probability_list, current_signals, ego_curr_acc, 
                   brake_percentage, road, next_road, p_lane_id, prev_tlight_sign, orientation, MID_POINT, collision_tag,)
         )
@@ -395,10 +476,13 @@ def calculate_metrics(agents, ego):
     cnt_vio = 0
     total_rate = 0
     
-    for vio in max_values:
-        if vio > 0:
+    # if not equal_prob:
+    #     update_violation_weight(max_values)
+    
+    for i in range (0, len(max_values)):
+        if max_values[i] > 0:
             cnt_vio += 1
-            total_rate += vio
+            total_rate += max_values[i]
     
     if cnt_vio == 0:
         cnt_vio = 1
@@ -473,6 +557,7 @@ def load_scene():
     global ROAD
     global prev_tlight_sign
     global prev_lane_id
+    global DREAMVIEW
     prev_lane_id = ""
     prev_tlight_sign = {}
 
@@ -493,11 +578,11 @@ def load_scene():
         './Transform/{}.pt'.format("road" + "4" + "_start"))
     if road_num == '1':
         if scene == 'bd77ac3b-fbc3-41c3-a806-25915c777022':
-            state.transform.position.x = 142.9
-            state.transform.position.y = 35.5
-            state.transform.position.z = 58.6
-            state.transform.rotation.y = 53
-            state.transform.rotation.x = 360
+            state.transform.position.x = 213.8
+            state.transform.position.y = 35.7
+            state.transform.position.z = 122.8
+            state.transform.rotation.y = 49
+            state.transform.rotation.x = 0
         elif scene == '45dd30b0-4be1-4eb7-820a-3e175b0117fc':
             state.transform.position.x = -698.2
             state.transform.position.y = 0.0
@@ -540,6 +625,8 @@ def load_scene():
     EGO = sim.add_agent("8e776f67-63d6-4fa3-8587-ad00a0b41034",
                         lgsvl.AgentType.EGO, state)
     EGO.connect_bridge(os.environ.get("BRIDGE_HOST", APOLLO_HOST), 9090)
+    
+    DREAMVIEW = lgsvl.dreamview.Connection(sim, EGO, APOLLO_HOST, '9988')
 
     sensors = EGO.get_sensors()
     sim.get_agents()[0].on_collision(on_collision)
@@ -549,7 +636,7 @@ def load_scene():
     if road_num == '1':
         if scene == 'bd77ac3b-fbc3-41c3-a806-25915c777022':
             requests.post(
-                "http://localhost:8933/LGSVL/SetDestination?des_x=341.1&des_y=35.5&des_z=289.4")
+                "http://localhost:8933/LGSVL/SetDestination?des_x=338.4&des_y=35.5&des_z=286.9")
 
         elif scene == '45dd30b0-4be1-4eb7-820a-3e175b0117fc':
             requests.post(
@@ -706,11 +793,12 @@ def save_state():
 def set_destination():
     global DESTINATION
     global EGO
+    global DREAMVIEW
     x = float(request.args.get('des_x'))
     y = float(request.args.get('des_y'))
     z = float(request.args.get('des_z'))
     print("x y z: ", x, y, z)
-    DREAMVIEW = lgsvl.dreamview.Connection(sim, EGO, APOLLO_HOST, '8999')
+    # DREAMVIEW = lgsvl.dreamview.Connection(sim, EGO, APOLLO_HOST, '9988')
     DREAMVIEW.set_destination(x, z, y, coord_type=CoordType.Unity)
     return 'set destination.'
 
@@ -1213,8 +1301,12 @@ def cal_dis_2d(x_a, y_a, x_b, y_b):
 
 def check_modules_status():
     global EGO
+    global DREAMVIEW
     
-    DREAMVIEW = lgsvl.dreamview.Connection(sim, EGO, APOLLO_HOST, '8999')
+    # print("Create connection")
+    # DREAMVIEW = lgsvl.dreamview.Connection(sim, EGO, ip=APOLLO_HOST, port='9988')
+    # print("Create connection successfully")
+    
     
     modules_status = DREAMVIEW.get_module_status()
     
@@ -1321,6 +1413,7 @@ def get_environment_state():
 
     # get apollo info
     local_info, per_info, pred_info, control_info, tlight_info = get_apollo_msg()
+    print("Get messages")
 
     # transform ego's position to world coordinate position
     transform = lgsvl.Transform(
@@ -1374,92 +1467,6 @@ def get_environment_state():
 
     if v_x < 0:
         local_angle += math.pi
-        
-        # calculate road direction
-    
-    # current lane direction
-    # for lane in control_info["lane_arr"]:
-    #     id = control_info["lane_arr"][lane]
-    #     # print(lanes_map[id][0], lanes_map[id][-1])
-
-    #     if ((lanes_map[id][0]['x'] <= local_info['position']['x'] and local_info['position']['x'] <= lanes_map[id][-1]['x'])
-    #             or (lanes_map[id][0]['x'] >= local_info['position']['x'] and local_info['position']['x'] >= lanes_map[id][-1]['x'])):
-    #         if ((lanes_map[id][0]['y'] <= local_info['position']['y'] and local_info['position']['y'] <= lanes_map[id][-1]['y'])
-    #                 or (lanes_map[id][0]['y'] >= local_info['position']['y'] and local_info['position']['y'] >= lanes_map[id][-1]['y'])):
-    #             cnt = 0
-    #             dis = 100000000
-    #             for i in range(0, len(lanes_map[id]) - 1):
-    #                 cur_dis = cal_dis(local_info['position']['x'], local_info['position']
-    #                                   ['y'], 0, lanes_map[id][i]['x'], lanes_map[id][i]['y'], 0)
-    #                 if cur_dis < dis:
-    #                     dis = cur_dis
-                        
-    #                     gps_waypoint = sim.map_from_gps(None, None, lanes_map[id][i]['y'], lanes_map[id][i]['x'],  None, None)
-                        
-    #                     lane_waypoint['point_f'] = {
-    #                         'x': gps_waypoint.position.x,
-    #                         'y': gps_waypoint.position.y,
-    #                         'z': gps_waypoint.position.z
-    #                     }
-                        
-    #                     gps_waypoint = sim.map_from_gps(None, None, lanes_map[id][i + 1]['y'], lanes_map[id][i + 1]['x'],  None, None)
-
-    #                     lane_waypoint['point_l'] = {
-    #                         'x': gps_waypoint.position.x,
-    #                         'y': gps_waypoint.position.y,
-    #                         'z': gps_waypoint.position.z
-    #                     }
-
-    # # next 3s lane direction
-    # for lane in control_info["lane_arr"]:
-    #     id = control_info["lane_arr"][lane]
-    #     # print(lanes_map[id][0], lanes_map[id][-1])
-
-    #     if ((lanes_map[id][0]['x'] <= control_info['last_point']['x'] and control_info['last_point']['x'] <= lanes_map[id][-1]['x'])
-    #             or (lanes_map[id][0]['x'] >= control_info['last_point']['x'] and control_info['last_point']['x'] >= lanes_map[id][-1]['x'])):
-    #         if ((lanes_map[id][0]['y'] <= control_info['last_point']['y'] and control_info['last_point']['y'] <= lanes_map[id][-1]['y'])
-    #                 or (lanes_map[id][0]['y'] >= control_info['last_point']['y'] and control_info['last_point']['y'] >= lanes_map[id][-1]['y'])):
-    #             cnt = 0
-    #             dis = 100000000
-    #             for i in range(0, len(lanes_map[id]) - 1):
-    #                 cur_dis = cal_dis(control_info['last_point']['x'], control_info['last_point']
-    #                                   ['y'], 0, lanes_map[id][i]['x'], lanes_map[id][i]['y'], 0)
-    #                 if cur_dis < dis:
-    #                     dis = cur_dis
-                        
-    #                     gps_waypoint = sim.map_from_gps(None, None, lanes_map[id][i]['y'], lanes_map[id][i]['x'],  None, None)
-                        
-    #                     next_lane_waypoint['point_f'] = {
-    #                         'x': gps_waypoint.position.x,
-    #                         'y': gps_waypoint.position.y,
-    #                         'z': gps_waypoint.position.z
-    #                     }
-                        
-    #                     gps_waypoint = sim.map_from_gps(None, None, lanes_map[id][i + 1]['y'], lanes_map[id][i + 1]['x'],  None, None)
-
-    #                     next_lane_waypoint['point_l'] = {
-    #                         'x': gps_waypoint.position.x,
-    #                         'y': gps_waypoint.position.y,
-    #                         'z': gps_waypoint.position.z
-    #                     }
-    
-    # cnt = 0
-     
-    # for tlight in tlight_info:
-    #     id = tlight_info[tlight]['id']
-    #     signal_info = signals_map[id]
-        
-    #     nearest_boundary_point = {}
-    #     nearest_distance_boundary = 1000000
-        
-    #     tf_obj = {
-    #         'id': tlight_info[tlight]['id'],
-    #         'color': tlight_info[tlight]['color'],
-    #         'stop_line': signal_info['stop_line']
-    #     }
-    #     current_signals[str(cnt)] = tf_obj
-    #     cnt += 1
-
 
     # state_dict = {'x': position.x, 'y': position.y, 'z': position.z,
     #               'rx': rotation.x, 'ry': rotation.y, 'rz': rotation.z,
@@ -1566,6 +1573,7 @@ def get_sub_state():
     global current_signals
     global signals_map
     global signals_params
+    global lane_world_coordinate
     
     agents = sim.get_agents()
     
@@ -1590,33 +1598,33 @@ def get_sub_state():
     }
     
     current_signals = {}
-    lane_waypoint = {
-        'point_f': {
-            'x': 0,
-            'y': 0,
-            'z': 0
-        },
-        'point_l': {
-            'x': 0,
-            'y': 0,
-            'z': 0
-        },
-        'lane_id': ""
-    }
+    # lane_waypoint = {
+    #     'point_f': {
+    #         'x': 0,
+    #         'y': 0,
+    #         'z': 0
+    #     },
+    #     'point_l': {
+    #         'x': 0,
+    #         'y': 0,
+    #         'z': 0
+    #     },
+    #     'lane_id': ""
+    # }
 
-    next_lane_waypoint = {
-        'point_f': {
-            'x': 0,
-            'y': 0,
-            'z': 0
-        },
-        'point_l': {
-            'x': 0,
-            'y': 0,
-            'z': 0
-        },
-        'lane_id': ""
-    }
+    # next_lane_waypoint = {
+    #     'point_f': {
+    #         'x': 0,
+    #         'y': 0,
+    #         'z': 0
+    #     },
+    #     'point_l': {
+    #         'x': 0,
+    #         'y': 0,
+    #         'z': 0
+    #     },
+    #     'lane_id': ""
+    # }
 
     # get apollo info
     local_info, control_info, tlight_info, chassis_info = get_apollo_sub_msg()
@@ -1629,28 +1637,33 @@ def get_sub_state():
     
     # calculate road direction
     
+    # print("Lane maps: ", lanes_map)
+    
     # current lane direction
     for lane in control_info["lane_arr"]:
         id = control_info["lane_arr"][lane]
-        # print(lanes_map[id][0], lanes_map[id][-1])
+        # print("Id: ", id)
+        # print(lanes_map[id]['central_curve'][0], lanes_map[id]['central_curve'][-1])
+        # print(lanes_map[id]['left_boundary'][0], lanes_map[id]['left_boundary'][-1])
+        # print(lanes_map[id]['right_boundary'][0], lanes_map[id]['right_boundary'][-1])
 
-        if ((lanes_map[id][0]['x'] <= local_info['position']['x'] and local_info['position']['x'] <= lanes_map[id][-1]['x'])
-                or (lanes_map[id][0]['x'] >= local_info['position']['x'] and local_info['position']['x'] >= lanes_map[id][-1]['x'])):
-            if ((lanes_map[id][0]['y'] <= local_info['position']['y'] and local_info['position']['y'] <= lanes_map[id][-1]['y'])
-                    or (lanes_map[id][0]['y'] >= local_info['position']['y'] and local_info['position']['y'] >= lanes_map[id][-1]['y'])):
+        if ((lanes_map[id]['central_curve'][0]['x'] <= local_info['position']['x'] and local_info['position']['x'] <= lanes_map[id]['central_curve'][-1]['x'])
+                or (lanes_map[id]['central_curve'][0]['x'] >= local_info['position']['x'] and local_info['position']['x'] >= lanes_map[id]['central_curve'][-1]['x'])):
+            if ((lanes_map[id]['central_curve'][0]['y'] <= local_info['position']['y'] and local_info['position']['y'] <= lanes_map[id]['central_curve'][-1]['y'])
+                    or (lanes_map[id]['central_curve'][0]['y'] >= local_info['position']['y'] and local_info['position']['y'] >= lanes_map[id]['central_curve'][-1]['y'])):
                 cnt = 0
                 dis = 100000000
                 # print("Ego position: ", local_info['position'])
                 # print("Lane First Waypoint: ", lanes_map[id][0])
                 # print("Lane Last Waypoint: ", lanes_map[id][-1])
-                for i in range(0, len(lanes_map[id]) - 1):
+                for i in range(0, len(lanes_map[id]['central_curve']) - 1):
                     cur_dis = cal_dis(local_info['position']['x'], local_info['position']
-                                      ['y'], 0, lanes_map[id][i]['x'], lanes_map[id][i]['y'], 0)
+                                      ['y'], 0, lanes_map[id]['central_curve'][i]['x'], lanes_map[id]['central_curve'][i]['y'], 0)
                     if cur_dis < dis:
                         # print("update lane waypoint")
                         dis = cur_dis
                         
-                        gps_waypoint = sim.map_from_gps(None, None, lanes_map[id][i]['y'], lanes_map[id][i]['x'],  None, None)
+                        gps_waypoint = sim.map_from_gps(None, None, lanes_map[id]['central_curve'][i]['y'], lanes_map[id]['central_curve'][i]['x'],  None, None)
                         
                         lane_waypoint['point_f'] = {
                             'x': gps_waypoint.position.x,
@@ -1658,7 +1671,7 @@ def get_sub_state():
                             'z': gps_waypoint.position.z
                         }
                         
-                        gps_waypoint = sim.map_from_gps(None, None, lanes_map[id][i + 1]['y'], lanes_map[id][i + 1]['x'],  None, None)
+                        gps_waypoint = sim.map_from_gps(None, None, lanes_map[id]['central_curve'][i + 1]['y'], lanes_map[id]['central_curve'][i + 1]['x'],  None, None)
 
                         lane_waypoint['point_l'] = {
                             'x': gps_waypoint.position.x,
@@ -1667,6 +1680,34 @@ def get_sub_state():
                         }
                         
                         lane_waypoint['lane_id'] = id
+                        
+                if not (id in lane_world_coordinate):
+                    # print("New Lane: ", id)
+                    lane_world_coordinate[id] = {}
+                    lane_world_coordinate[id]['left_boundary'] = []
+                    lane_world_coordinate[id]['right_boundary'] = []
+                    
+                    for i in range(0, len(lanes_map[id]['left_boundary'])):
+                        gps_waypoint = sim.map_from_gps(None, None, lanes_map[id]['left_boundary'][i]['y'], lanes_map[id]['left_boundary'][i]['x'],  None, None)
+                        
+                        waypoint = {
+                            'x': gps_waypoint.position.x,
+                            'y': gps_waypoint.position.y,
+                            'z': gps_waypoint.position.z
+                        }
+                        
+                        lane_world_coordinate[id]['left_boundary'].append(waypoint)
+                        
+                    for i in range(0, len(lanes_map[id]['right_boundary'])):
+                        gps_waypoint = sim.map_from_gps(None, None, lanes_map[id]['right_boundary'][i]['y'], lanes_map[id]['right_boundary'][i]['x'],  None, None)
+                        
+                        waypoint = {
+                            'x': gps_waypoint.position.x,
+                            'y': gps_waypoint.position.y,
+                            'z': gps_waypoint.position.z
+                        }
+                        
+                        lane_world_coordinate[id]['right_boundary'].append(waypoint)
                         
     # print("Current lane waypoint: ", lane_waypoint)
 
@@ -1677,21 +1718,21 @@ def get_sub_state():
         
         # print(control_info['last_point'])
 
-        if ((lanes_map[id][0]['x'] <= control_info['last_point']['x'] and control_info['last_point']['x'] <= lanes_map[id][-1]['x'])
-                or (lanes_map[id][0]['x'] >= control_info['last_point']['x'] and control_info['last_point']['x'] >= lanes_map[id][-1]['x'])):
-            if ((lanes_map[id][0]['y'] <= control_info['last_point']['y'] and control_info['last_point']['y'] <= lanes_map[id][-1]['y'])
-                    or (lanes_map[id][0]['y'] >= control_info['last_point']['y'] and control_info['last_point']['y'] >= lanes_map[id][-1]['y'])):
+        if ((lanes_map[id]['central_curve'][0]['x'] <= control_info['last_point']['x'] and control_info['last_point']['x'] <= lanes_map[id]['central_curve'][-1]['x'])
+                or (lanes_map[id]['central_curve'][0]['x'] >= control_info['last_point']['x'] and control_info['last_point']['x'] >= lanes_map[id]['central_curve'][-1]['x'])):
+            if ((lanes_map[id]['central_curve'][0]['y'] <= control_info['last_point']['y'] and control_info['last_point']['y'] <= lanes_map[id]['central_curve'][-1]['y'])
+                    or (lanes_map[id]['central_curve'][0]['y'] >= control_info['last_point']['y'] and control_info['last_point']['y'] >= lanes_map[id]['central_curve'][-1]['y'])):
                 cnt = 0
                 dis = 100000000
-                for i in range(0, len(lanes_map[id]) - 1):
+                for i in range(0, len(lanes_map[id]['central_curve']) - 1):
                     cur_dis = cal_dis(control_info['last_point']['x'], control_info['last_point']
-                                      ['y'], 0, lanes_map[id][i]['x'], lanes_map[id][i]['y'], 0)
+                                      ['y'], 0, lanes_map[id]['central_curve'][i]['x'], lanes_map[id]['central_curve'][i]['y'], 0)
                     if cur_dis < dis:
                         # print("update lane waypoint")
                         
                         dis = cur_dis
                         
-                        gps_waypoint = sim.map_from_gps(None, None, lanes_map[id][i]['y'], lanes_map[id][i]['x'],  None, None)
+                        gps_waypoint = sim.map_from_gps(None, None, lanes_map[id]['central_curve'][i]['y'], lanes_map[id]['central_curve'][i]['x'],  None, None)
                         
                         next_lane_waypoint['point_f'] = {
                             'x': gps_waypoint.position.x,
@@ -1699,7 +1740,7 @@ def get_sub_state():
                             'z': gps_waypoint.position.z
                         }
                         
-                        gps_waypoint = sim.map_from_gps(None, None, lanes_map[id][i + 1]['y'], lanes_map[id][i + 1]['x'],  None, None)
+                        gps_waypoint = sim.map_from_gps(None, None, lanes_map[id]['central_curve'][i + 1]['y'], lanes_map[id]['central_curve'][i + 1]['x'],  None, None)
 
                         next_lane_waypoint['point_l'] = {
                             'x': gps_waypoint.position.x,
