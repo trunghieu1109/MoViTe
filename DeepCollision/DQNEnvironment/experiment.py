@@ -152,20 +152,20 @@ for hieu in range(0, 5):
 
     print("Number of actions: ", action_space_size)
 
-    current_eps = str(200)
+    current_eps = str(150)
     road_num = str(1)
 
     file_name = str(int(time.time()))
 
     dqn = DQN()
 
-    dqn.eval_net.load_state_dict(torch.load('./model/movite_tartu_ver_2/eval_net_' + current_eps + '_road' + road_num + '.pt'))
-    dqn.target_net.load_state_dict(torch.load('./model/movite_tartu_ver_2/target_net_' + current_eps + '_road' + road_num + '.pt'))
+    dqn.eval_net.load_state_dict(torch.load('./model/movite_tartu_min_dis_2/eval_net_' + current_eps + '_road' + road_num + '.pt'))
+    dqn.target_net.load_state_dict(torch.load('./model/movite_tartu_min_dis_2/target_net_' + current_eps + '_road' + road_num + '.pt'))
 
     title = ["Episode", "State", "Action", "Choosing_Type", "Violation Rate", "Violation Rate List", "Collision_uid", "Done"]
     df_title = pd.DataFrame([title])
     
-    df_title.to_csv('../ExperimentData/Random-or-Non-random Analysis/movite_tartu_ver_2/dqn_6s_road1_' + current_eps + 'eps_' + file_name + '_0.2eps.csv', mode='w', header=False, index=None)
+    df_title.to_csv('../ExperimentData/Random-or-Non-random Analysis/movite_tartu_min_dis_2/dqn_6s_road1_' + current_eps + 'eps_' + file_name + '_0.2eps.csv', mode='w', header=False, index=None)
 
     iteration = 0
     step = 0
@@ -227,7 +227,7 @@ for hieu in range(0, 5):
                     print("Episode complete")
                     for iter in range(0, len(state_)):
                         pd.DataFrame([[iteration, state_[iter], action_[iter], type_[iter], vioRate_[iter], vioArr_[iter], collision_uid_[iter], done_[iter]]]).to_csv(
-                            '../ExperimentData/Random-or-Non-random Analysis/movite_tartu_ver_2/dqn_6s_road1_' + current_eps + 'eps_' + file_name + '_0.2eps.csv',
+                            '../ExperimentData/Random-or-Non-random Analysis/movite_tartu_min_dis_2/dqn_6s_road1_' + current_eps + 'eps_' + file_name + '_0.2eps.csv',
                             mode='a',
                             header=False, index=None)
                     iteration += 1
@@ -235,7 +235,7 @@ for hieu in range(0, 5):
                 print("Episode complete")
                 for iter in range(0, len(state_)):
                     pd.DataFrame([[iteration, state_[iter], action_[iter], type_[iter], vioRate_[iter], vioArr_[iter], collision_uid_[iter], done_[iter]]]).to_csv(
-                        '../ExperimentData/Random-or-Non-random Analysis/movite_tartu_ver_2/dqn_6s_road1_' + current_eps + 'eps_' + file_name + '_0.2eps.csv',
+                        '../ExperimentData/Random-or-Non-random Analysis/movite_tartu_min_dis_2/dqn_6s_road1_' + current_eps + 'eps_' + file_name + '_0.2eps.csv',
                         mode='a',
                         header=False, index=None)
                 iteration += 1

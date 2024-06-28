@@ -167,7 +167,7 @@ class DQN(object):
                 HyperParameter['EPS_START'] - HyperParameter['EPS_END']) * math.exp(
             -1. * self.steps_done / HyperParameter['EPS_DECAY'])
         
-        # eps_threshold = 0.2
+        eps_threshold = 0.2
         
         print("eps threshold:", eps_threshold)
         
