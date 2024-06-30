@@ -478,7 +478,7 @@ def calculate_measures(state_list, ego_state, isNpcVehicle, current_signals, ego
         dis_vec = np.array([ego_position[0] - a_position[0], ego_position[1] - a_position[1], ego_position[2] - a_position[2]])
         dist = math.sqrt(dis_vec[0] ** 2 + dis_vec[2] ** 2)
         
-        min_dis = 1.5
+        min_dis = 1
         
         # print("Check in line")
         if isInLine(lane_info_, successor, predecessor, {
@@ -531,10 +531,10 @@ def calculate_measures(state_list, ego_state, isNpcVehicle, current_signals, ego
         if ego_velocity[0] * a_velocity[0] > 0:
             if ego_velocity[0] * (ego_position[0] - a_position[0]) < 0:
                 loSD = 1 / 2 * (
-                    abs(pow(ego_velocity[0], 2) / ego_acc[0] - pow(a_velocity[0], 2) / agent_acc[0])) + ego_velocity[0] * reaction_time + min_dis * math.abs(dis_vec[0]) / dist
+                    abs(pow(ego_velocity[0], 2) / ego_acc[0] - pow(a_velocity[0], 2) / agent_acc[0])) + ego_velocity[0] * reaction_time + min_dis * abs(dis_vec[0]) / dist
             else: 
                 loSD = 1 / 2 * (
-                    abs(pow(ego_velocity[0], 2) / ego_acc[0] - pow(a_velocity[0], 2) / agent_acc[0])) + a_velocity[0] * reaction_time + min_dis * math.abs(dis_vec[0]) / dist
+                    abs(pow(ego_velocity[0], 2) / ego_acc[0] - pow(a_velocity[0], 2) / agent_acc[0])) + a_velocity[0] * reaction_time + min_dis * abs(dis_vec[0]) / dist
         else:
             loSD = 1 / 2 * (
                 abs(pow(ego_velocity[0], 2) / ego_acc[0] + pow(a_velocity[0], 2) / agent_acc[0]))
@@ -581,10 +581,10 @@ def calculate_measures(state_list, ego_state, isNpcVehicle, current_signals, ego
         if ego_velocity[2] * a_velocity[2] > 0:
             if ego_velocity[2] * (ego_position[2] - a_position[2]) < 0:
                 laSD = 1 / 2 * (
-                    abs(pow(ego_velocity[2], 2) / ego_acc[2] - pow(a_velocity[2], 2) / agent_acc[2])) + ego_velocity[2] * reaction_time + min_dis * math.abs(dis_vec[2]) / dist
+                    abs(pow(ego_velocity[2], 2) / ego_acc[2] - pow(a_velocity[2], 2) / agent_acc[2])) + ego_velocity[2] * reaction_time + min_dis * abs(dis_vec[2]) / dist
             else: 
                 laSD = 1 / 2 * (
-                    abs(pow(ego_velocity[2], 2) / ego_acc[2] - pow(a_velocity[2], 2) / agent_acc[2])) + a_velocity[2] * reaction_time + min_dis * math.abs(dis_vec[2]) / dist
+                    abs(pow(ego_velocity[2], 2) / ego_acc[2] - pow(a_velocity[2], 2) / agent_acc[2])) + a_velocity[2] * reaction_time + min_dis * abs(dis_vec[2]) / dist
         else:
             laSD = 1 / 2 * (
                 abs(pow(ego_velocity[2], 2) / ego_acc[2] + pow(a_velocity[2], 2) / agent_acc[2]))
