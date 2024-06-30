@@ -307,6 +307,9 @@ def calculate_measures_thread(state_list, ego_state, isNpcVehicle, TTC_list, vio
     if collision_tag_:
         probability2 = 1
         vioRate[6] = 1
+        for i in range(0, 5):
+            if vioRate[i] > 0:
+                vioRate[i] = 1.0
     probability_list.append(round(probability2, 6))
     
     vioRate_list.append(vioRate)

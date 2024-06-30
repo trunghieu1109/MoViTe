@@ -167,7 +167,7 @@ class DQN(object):
                 HyperParameter['EPS_START'] - HyperParameter['EPS_END']) * math.exp(
             -1. * self.steps_done / HyperParameter['EPS_DECAY'])
         
-        eps_threshold = 0.2
+        # eps_threshold = 0.2
         
         print("eps threshold:", eps_threshold)
         
@@ -195,7 +195,7 @@ class DQN(object):
                         topk_values, topk_indices = torch.topk(actions_value, k=2)
                         action = topk_indices[0][1].data.numpy()
                 else:
-                    topk_values, topk_indices = torch.topk(actions_value, k=5)
+                    topk_values, topk_indices = torch.topk(actions_value, k=6)
                     cnt = 1
                     while cnt <= 5:
                         action = topk_indices[0][cnt].data.numpy()
@@ -380,13 +380,13 @@ if __name__ == '__main__':
     if current_eps != '':
         print("Continue at episode: " + current_eps)
         
-        with open('./model/movite_tartu_min_dis_2/rl_network_' + current_eps + '_road' + road_num + '.pkl', "rb") as file:
+        with open('./model/movite_tartu_min_dis_1_fix/rl_network_' + current_eps + '_road' + road_num + '.pkl', "rb") as file:
             dqn = pickle.load(file)
         # print(dqn.buffer_memory.real_size, dqn.memory_counter, dqn.steps_done, dqn.learn_step_counter)
-        dqn.eval_net.load_state_dict(torch.load('./model/movite_tartu_min_dis_2/eval_net_' + current_eps + '_road' + road_num + '.pt'))
-        dqn.target_net.load_state_dict(torch.load('./model/movite_tartu_min_dis_2/target_net_' + current_eps + '_road' + road_num + '.pt'))
+        dqn.eval_net.load_state_dict(torch.load('./model/movite_tartu_min_dis_1_fix/eval_net_' + current_eps + '_road' + road_num + '.pt'))
+        dqn.target_net.load_state_dict(torch.load('./model/movite_tartu_min_dis_1_fix/target_net_' + current_eps + '_road' + road_num + '.pt'))
         # restore memory buffer
-        with open('./model/movite_tartu_min_dis_2/memory_buffer_' + current_eps + '_road' + road_num + '.pkl', "rb") as file:
+        with open('./model/movite_tartu_min_dis_1_fix/memory_buffer_' + current_eps + '_road' + road_num + '.pkl', "rb") as file:
             dqn.buffer_memory = pickle.load(file)
             
         print(dqn.buffer_memory.real_size, dqn.learn_step_counter, dqn.steps_done)
@@ -414,7 +414,7 @@ if __name__ == '__main__':
         requests.post("http://localhost:8933/LGSVL/SetObTime?observation_time=" + '6')
         #isRouted = False
     
-        for i_episode in range(0, 150):
+        for i_episode in range(0, 100):
             print('------------------------------------------------------')
             print('+                 Road, Episode: ', road_num_int, i_episode, '                +')
             print('------------------------------------------------------')
@@ -531,17 +531,17 @@ if __name__ == '__main__':
                     # print(dqn.eval_net.state_dict())
                     # print(dqn.target_net.state_dict())
                     torch.save(dqn.eval_net.state_dict(),
-                               './model/movite_tartu_min_dis_2/eval_net_' + str(
+                               './model/movite_tartu_min_dis_1_fix/eval_net_' + str(
                                    i_episode + 1) + '_road' + road_num + '.pt')
                     torch.save(dqn.target_net.state_dict(),
-                               './model/movite_tartu_min_dis_2/target_net_' + str(
+                               './model/movite_tartu_min_dis_1_fix/target_net_' + str(
                                    i_episode + 1) + '_road' + road_num + '.pt')
                     
-                    with open('./model/movite_tartu_min_dis_2/memory_buffer_' + str(
+                    with open('./model/movite_tartu_min_dis_1_fix/memory_buffer_' + str(
                                    i_episode + 1) + '_road' + road_num + '.pkl', "wb") as file:
                         pickle.dump(dqn.buffer_memory, file)
                         
-                    with open('./model/movite_tartu_min_dis_2/rl_network_' + str(
+                    with open('./model/movite_tartu_min_dis_1_fix/rl_network_' + str(
                                    i_episode + 1) + '_road' + road_num + '.pkl', "wb") as file:
                         pickle.dump(dqn, file)
                     
