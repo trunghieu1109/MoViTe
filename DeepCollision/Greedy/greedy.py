@@ -1,5 +1,6 @@
 import socket
 import time
+import os
 
 import pandas as pd
 
@@ -151,12 +152,19 @@ def calculate_reward(action_id):
 title = ["Episode", "Step", "State", "Action", "Violation Rate",
          "Collision_uid", "Violation Rate List" "Done"]
 df_title = pd.DataFrame([title])
-file_tag = str(int(time.time()))
 
 def greedy(road_num, opt):
     i_episode = 0
     step = 0
-    file_name = '../ExperimentData/Random-or-Non-random Analysis/Data Greedy/greedy_road{}_{}s.csv'.format(road_num, opt)
+    file_tag = str(int(time.time()))
+    
+    file_path = '../ExperimentData/Random-or-Non-random Analysis/Data_Greedy/'
+    
+    if not os.path.isdir(file_path):
+        print("Create dir", file_path)
+        os.makedirs(file_path)
+    
+    file_name = '{}greedy_road_{}_{}_{}s.csv'.format(file_path, file_tag, road_num, opt)
     df_title.to_csv(file_name, mode='w', header=False,
                     index=None)
 
