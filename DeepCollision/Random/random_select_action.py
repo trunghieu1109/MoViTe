@@ -5,6 +5,7 @@ import pandas as pd
 import time
 import numpy as np
 import json
+import os 
 
 
 # Execute action
@@ -152,7 +153,14 @@ for loop in range(0, 5):
     title = ["Episode", "Step", "State", "Action", "Violation Rate", "Collision_uid", "Violation Rate List" "Done"]
     df_title = pd.DataFrame([title])
     file_name = str(int(time.time()))
-    df_title.to_csv('../ExperimentData/Random-or-Non-random Analysis/Data Random/random_6s_road1_' + file_name + '.csv', mode='w', header=False, index=None)
+    
+    file_path = '../ExperimentData/Random-or-Non-random Analysis/Data_Random/'
+    
+    if not os.path.isdir(file_path):
+        print("Create dir", file_path)
+        os.makedirs(file_path)
+    
+    df_title.to_csv(file_path + 'random_6s_road1_' + file_name + '_dis_1' + '.csv', mode='w', header=False, index=None)
 
     iteration = 0
     step = 0
@@ -174,13 +182,11 @@ for loop in range(0, 5):
             except json.JSONDecodeError as e:
                 print(e)
                 retry = True
-            
-
 
         print('api_id, violation_rate, violation_rate_list, done: ', api_id, violation_rate, vioRate_list, done)
 
         pd.DataFrame([[iteration, step, s, api_id, violation_rate, collision_uid, vioRate_list, done]]).to_csv(
-            '../ExperimentData/Random-or-Non-random Analysis/Data Random/random_6s_road1_' + file_name + '.csv',
+            '../ExperimentData/Random-or-Non-random Analysis/Data_Random_Opt_Min_Dis/random_6s_road1_' + file_name + '_dis_1' + '.csv',
             mode='a',
             header=False, index=None)
 
