@@ -359,82 +359,13 @@ def get_cos(vec1, vec2):
     
     return numerator / denominator
 
-def get_line_equation(point_a, point_b):
-    a = (point_a['z'] - point_b['z'])
-    b = -(point_a['x'] - point_b['x'])
-    c = - point_a['x'] * a - point_a['z'] * b
-    
-    return {
-        'a': a,
-        'b': b,
-        'c': c
-    }
-    
-def get_line_equation_value(line, point):
-    return line['a'] * point['x'] + line['b'] * point['z'] + line['c']
-
-def check_in_polygon(polygon_p, point):
-    for i in range(0, 4):
-        equation = get_line_equation(polygon_p[i], polygon_p[(i + 1) % 4])
-        sample_value = get_line_equation_value(equation, polygon_p[(i + 2) % 4])
-        point_value = get_line_equation_value(equation, point)
-        
-        if sample_value * point_value < 0:
-            return False
-        
-    return True
-
-def isInLine(lane_info_, successor, predecessor, point):
-    for i in range(0, len(lane_info_['left_boundary']) - 1):
-        polygon_p = []
-        polygon_p.append(lane_info_['left_boundary'][i])
-        polygon_p.append(lane_info_['left_boundary'][i + 1])
-        polygon_p.append(lane_info_['right_boundary'][i + 1])
-        polygon_p.append(lane_info_['right_boundary'][i])
-        
-        if check_in_polygon(polygon_p, point):
-            return True
-        
-    if successor != None:
-        for i in range(0, len(successor['left_boundary']) - 1):
-            polygon_p = []
-            polygon_p.append(successor['left_boundary'][i])
-            polygon_p.append(successor['left_boundary'][i + 1])
-            polygon_p.append(successor['right_boundary'][i + 1])
-            polygon_p.append(successor['right_boundary'][i])
-            
-            if check_in_polygon(polygon_p, point):
-                return True
-            
-    if predecessor != None:
-        for i in range(0, len(predecessor['left_boundary']) - 1):
-            polygon_p = []
-            polygon_p.append(predecessor['left_boundary'][i])
-            polygon_p.append(predecessor['left_boundary'][i + 1])
-            polygon_p.append(predecessor['right_boundary'][i + 1])
-            polygon_p.append(predecessor['right_boundary'][i])
-            
-            if check_in_polygon(polygon_p, point):
-                return True
-        
-    return False
-
 # @jit(nopython=True, fastmath=True)
 def calculate_measures(state_list, ego_state, isNpcVehicle, current_signals, ego_curr_acc, prev_brake_percentage, brake_percentage, 
-                       agent_uid, lane_info_, successor, predecessor,road, next_road, p_lane_id, p_tlight_sign, 
+                       agent_uid, road, next_road, p_lane_id, p_tlight_sign, 
                        orientation, mid_point = None, dis_tag = True):
-    
-    # print("Lane: ", lane_info_)
-    # print('\n')
-    # print("Successor: ", successor)
-    # print('\n')
-    # print("Predecessor: ", predecessor)
-    # print('\n')
     
     ego_transform = ego_state.transform
     ego_speed = ego_state.speed
-    
-    # print("Ego Speed: ", ego_speed)
     
     ego_position = np.array([ego_transform.position.x, ego_transform.position.y, ego_transform.position.z])
     ego_velocity = np.array([ego_state.velocity.x, ego_state.velocity.y, ego_state.velocity.z])
@@ -451,17 +382,12 @@ def calculate_measures(state_list, ego_state, isNpcVehicle, current_signals, ego
             ego_acc[1] = 0.001
         if ego_acc[2] == 0: 
             ego_acc[2] = 0.001
-    
-    # print("Ego Velocity: ", ego_velocity)
-    # print("Ego Acc: ", ego_acc)
-    
 
     trajectory_ego_k, trajectory_ego_b = get_line(ego_position, ego_velocity)
 
     TTC = 100000
     distance = 10000
     loProC_list, laProC_list = [0], [0]  # probability
-    # loVioRate_list, laVioRate_list = [0], [0]
     frontVioRate_list = [0]
     behindVioRate_list = [0]
     proC_list = [0]
@@ -470,27 +396,11 @@ def calculate_measures(state_list, ego_state, isNpcVehicle, current_signals, ego
     reaction_time = 0.5
     
     for i in range(0, len(state_list)):
-        # print("*" * 80, agent_uid[i])
         transform = state_list[i].transform
         state = state_list[i]
         a_position = np.array([transform.position.x, transform.position.y, transform.position.z])
         a_velocity = np.array([state.velocity.x, state.velocity.y, state.velocity.z])
         dis_vec = np.array([ego_position[0] - a_position[0], ego_position[1] - a_position[1], ego_position[2] - a_position[2]])
-        dist = math.sqrt(dis_vec[0] ** 2 + dis_vec[2] ** 2)
-        
-        min_dis = 1
-        
-        # print("Check in line")
-        if isInLine(lane_info_, successor, predecessor, {
-            'x': a_position[0],
-            'y': a_position[1],
-            'z': a_position[2]
-        }):
-            
-            # print(10*'*', "Obstacle is in line", 10*'*')
-            min_dis = 5
-        
-        # print("Check complete")
         
         agent_acc = None
         
@@ -524,37 +434,26 @@ def calculate_measures(state_list, ego_state, isNpcVehicle, current_signals, ego
 
         # Calculate LoSD
         loSD = 100000
-        
-        # print("Agent Velocity: ", a_velocity)
-        # print("Agent Acc: ", agent_acc)
 
         if ego_velocity[0] * a_velocity[0] > 0:
             if ego_velocity[0] * (ego_position[0] - a_position[0]) < 0:
                 loSD = 1 / 2 * (
-                    abs(pow(ego_velocity[0], 2) / ego_acc[0] - pow(a_velocity[0], 2) / agent_acc[0])) + ego_velocity[0] * reaction_time + min_dis * abs(dis_vec[0]) / dist
+                    abs(pow(ego_velocity[0], 2) / ego_acc[0] - pow(a_velocity[0], 2) / agent_acc[0])) + ego_velocity[0] * reaction_time
             else: 
                 loSD = 1 / 2 * (
-                    abs(pow(ego_velocity[0], 2) / ego_acc[0] - pow(a_velocity[0], 2) / agent_acc[0])) + a_velocity[0] * reaction_time + min_dis * abs(dis_vec[0]) / dist
+                    abs(pow(ego_velocity[0], 2) / ego_acc[0] - pow(a_velocity[0], 2) / agent_acc[0])) + a_velocity[0] * reaction_time
         else:
             loSD = 1 / 2 * (
                 abs(pow(ego_velocity[0], 2) / ego_acc[0] + pow(a_velocity[0], 2) / agent_acc[0]))
-            
-            # print("Absolute lo distance: ", abs(pow(ego_velocity[0], 2) / ego_acc[0] + pow(a_velocity[0], 2) / agent_acc[0]))
-            
             
             if ego_velocity[0] * (ego_position[0] - a_position[0]) > 0:
                 loSD = 0
                 
         
-        # print("Safety Distance Lo: ", loSD)
-        # print("Current Distance Lo: ", abs(ego_position[0] - a_position[0]))
-        loProC = calculate_collision_probability(loSD, abs(ego_position[0] - a_position[0]))
-        # print("Lo Proc: ", loProC)
-        loVioRate = calculate_violation_rate(loSD, abs(ego_position[0] - a_position[0]))
-        # print("Lo Violation Rate: ", loVioRate)
         
+        loProC = calculate_collision_probability(loSD, abs(ego_position[0] - a_position[0]))
+        loVioRate = calculate_violation_rate(loSD, abs(ego_position[0] - a_position[0]))
         loProC_list.append(loProC)
-        # loVioRate_list.append(loVioRate)
 
         # Calculate LaSD
         trajectory_agent_k = trajectory_agent_k if trajectory_ego_k - trajectory_agent_k != 0 else trajectory_agent_k + 0.0001
@@ -581,52 +480,30 @@ def calculate_measures(state_list, ego_state, isNpcVehicle, current_signals, ego
         if ego_velocity[2] * a_velocity[2] > 0:
             if ego_velocity[2] * (ego_position[2] - a_position[2]) < 0:
                 laSD = 1 / 2 * (
-                    abs(pow(ego_velocity[2], 2) / ego_acc[2] - pow(a_velocity[2], 2) / agent_acc[2])) + ego_velocity[2] * reaction_time + min_dis * abs(dis_vec[2]) / dist
+                    abs(pow(ego_velocity[2], 2) / ego_acc[2] - pow(a_velocity[2], 2) / agent_acc[2])) + ego_velocity[2] * reaction_time
             else: 
                 laSD = 1 / 2 * (
-                    abs(pow(ego_velocity[2], 2) / ego_acc[2] - pow(a_velocity[2], 2) / agent_acc[2])) + a_velocity[2] * reaction_time + min_dis * abs(dis_vec[2]) / dist
+                    abs(pow(ego_velocity[2], 2) / ego_acc[2] - pow(a_velocity[2], 2) / agent_acc[2])) + a_velocity[2] * reaction_time
         else:
             laSD = 1 / 2 * (
                 abs(pow(ego_velocity[2], 2) / ego_acc[2] + pow(a_velocity[2], 2) / agent_acc[2]))
             
-            # print("Absolute la distance: ", abs(pow(ego_velocity[2], 2) / ego_acc[2] + pow(a_velocity[2], 2) / agent_acc[2]))
-            
             if ego_velocity[2] * (ego_position[2] - a_position[2]) > 0:
                 laSD = 0
 
-        # print("Safety Distance La: ", laSD)
-        # print("Current Distance La: ", abs(ego_position[2] - a_position[2]))
         laProC = calculate_collision_probability(laSD, abs(ego_position[2] - a_position[2]))
-        # print("La Proc: ", laProC)
         laVioRate = calculate_violation_rate(laSD, abs(ego_position[2] - a_position[2]))
-        # print("La Violation Rate: ", laVioRate)
         laProC_list.append(laProC)
-        # laVioRate_list.append(laVioRate)
         
         proC = laProC * loProC
         
-        # print("ProC: ", proC)
-        
         vioRate = laVioRate * loVioRate
         
-        # print("Cos: ", get_cos(dis_vec, ego_velocity))
-        
         if get_cos(dis_vec, ego_velocity) < 0:
-            # frontLoVioRate_list.append(loVioRate)
-            # frontLaVioRate_list.append(laVioRate)
             frontVioRate_list.append(vioRate)
         else:
-            # behindLoVioRate_list.append(loVioRate)
-            # behindLaVioRate_list.append(laVioRate)
             if get_cos(ego_velocity, a_velocity) > 0:
                 behindVioRate_list.append(vioRate)
-                # print("Violation Rate: ", vioRate)
-                # print("LoSD: ", loSD)
-                # print("LoCD: ", abs(ego_position[0] - a_position[0]))
-                # print("LaSD: ", laSD)
-                # print("LaCD: ", abs(ego_position[2] - a_position[2]))
-        
-        # print("Violation Rate: ", vioRate)
         
         proC_list.append(proC)
         vioRate_list.append(vioRate)
@@ -661,64 +538,11 @@ def calculate_measures(state_list, ego_state, isNpcVehicle, current_signals, ego
     if condition[5] == 1.0:
         np_condition[5] = 1.0
         
-    # print("Violation Rate List:", np_condition)
-    
-    # if np_condition[0] == float(1):
-    #     print("Improper Passing")
-
-    # if np_condition[1] == float(1):
-    #     print("Improper Lane Changing")
-        
-    # if np_condition[2] == float(1):
-    #     print("Improper Turning")
-        
-    # if np_condition[3] == float(1):
-    #     print("Behind Violation Rate: ", behindVioRate_dt)
-    #     print("Brake percentage: ", brake_percentage)
-    #     print("Sudden Braking")
-        
-    # if np_condition[4] == float(1):
-    #     print("Dangerous Speeding")
-        
-    # if np_condition[5] == float(1):
-    #     print("Run on red light")
-        
-    # cnt_behavior = 0
-    
-    # print("Violation Rate: ", vioRate_dt)
-        
-    # for behavior in condition:
-        
-    #     if behavior != 0 and behavior != 1:
-    #         total_rate += behavior
-    #     else:
-    #         total_rate += behavior * vioRate_dt
-            
-    #     cnt_behavior += (behavior != 0)
-        
-    # if (proC_dt > 0):
-    #     total_rate += proC_dt
-    #     cnt_behavior += 1
-        
-    # if (cnt_behavior == 0):
-    #     cnt_behavior = 0.001
-    
-    # vioRate_avg = total_rate / cnt_behavior
-    
-    # print("Violation Rate Avg: ", vioRate_avg)
-    # print("Violation Rate: ", np_condition)
-
     return TTC, distance, proC_dt, curr_tlight_sign, np_condition
 
 
 if __name__ == "__main__":
-    # v1 = lgsvl.Vector(0, 0, 1)
-    # v2 = lgsvl.Vector(0, 1, 1)
-    #
-    # print(calculate_angle(v1, v2))
-    # print(calculate_distance(v1, v2))
     print(calculate_collision_probability(10, 2))
 
     a = (1, 99, 3)
     print(a[2])
-# print(npc_vehicle)
