@@ -547,11 +547,11 @@ def load_scene():
             state.transform.position.z = 122.8
             state.transform.rotation.y = 49
             state.transform.rotation.x = 0
-        elif scene == '45dd30b0-4be1-4eb7-820a-3e175b0117fc':
-            state.transform.position.x = -698.2
-            state.transform.position.y = 0.0
-            state.transform.position.z = 1498.1
-            state.transform.rotation.y = 289
+        elif scene == '12da60a7-2fc9-474d-a62a-5cc08cb97fe8':
+            state.transform.position.x = -663.3
+            state.transform.position.y = 10.2
+            state.transform.position.z = 241.5
+            state.transform.rotation.y = 81
             state.transform.rotation.x = 0
         elif scene == '5d272540-f689-4355-83c7-03bf11b6865f':
             state.transform.position.x = -598.6
@@ -602,9 +602,9 @@ def load_scene():
             requests.post(
                 "http://localhost:8933/LGSVL/SetDestination?des_x=338.4&des_y=35.5&des_z=286.9")
 
-        elif scene == '45dd30b0-4be1-4eb7-820a-3e175b0117fc':
+        elif scene == '12da60a7-2fc9-474d-a62a-5cc08cb97fe8':
             requests.post(
-                "http://localhost:8933/LGSVL/SetDestination?des_x=-888.4&des_y=0.0&des_z=1559.9")
+                "http://localhost:8933/LGSVL/SetDestination?des_x=-494.3&des_y=10.2&des_z=294.7")
         elif scene == '5d272540-f689-4355-83c7-03bf11b6865f':
             requests.post(
                 "http://localhost:8933/LGSVL/SetDestination?des_x=-550.8&des_y=30.2&des_z=-25.6")
