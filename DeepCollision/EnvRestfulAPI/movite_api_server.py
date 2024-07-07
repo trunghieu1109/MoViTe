@@ -10,7 +10,6 @@ import lgsvl
 import numpy as np
 import pickle
 # from ScenarioCollector.createUtils import *
-from tsfresh.feature_extraction import feature_calculators
 from collision_utils_origin_modified import pedestrian, npc_vehicle, calculate_measures
 import math
 import threading
@@ -120,7 +119,7 @@ msg_socket.connect(server_address)
 
 # import lane_information
 
-map = 'tartu' # map: tartu, sanfrancisco, borregasave
+map = 'tartu'
 
 lanes_map_file = "{}_lanes.pkl".format(map)
 lanes_map = None
@@ -282,7 +281,7 @@ def update_violation_weight(violation_list):
             pickle.dump(violation_weight, file)
 
 # calculate measures thread, use in multi-thread
-def calculate_measures_thread(state_list, ego_state, isNpcVehicle, TTC_list, vioRate_list, agent_uid, frame_list, distance_list, probability_list, 
+def calculate_measures_thread(state_list, ego_state, isNpcVehicle, TTC_list, vioRate_list, agent_uid, distance_list, probability_list, 
                               current_signals, ego_curr_acc, prev_brake_percentage, brake_percentage, road, next_road, p_lane_id, 
                               prev_tlight_sign_, orientation, mid_point=None, collision_tag_=False):
 
@@ -310,165 +309,6 @@ def calculate_measures_thread(state_list, ego_state, isNpcVehicle, TTC_list, vio
     probability_list.append(round(probability2, 6))
     
     vioRate_list.append(vioRate)
-    
-    # for i in range(len(frame_list) - 4, len(frame_list)):
-    #     for j in range(0, 7):
-    #         if vioRate[j] == 1.0:
-    #             frame_list[i].append(1)
-    #         else:
-    #             frame_list[i].append(0)
-
-def merging_frame(frames):
-    sliding_window_size = 4
-    
-    np_frames = np.array(frames)
-    
-    num_features = np_frames.shape[1]
-    num_frames = np_frames.shape[0]
-    
-    merged_frame_list = []
-    
-    output_file = './merged_state.csv'
-    
-    for j in range(0, int(num_frames / sliding_window_size)):
-        # print("(", sliding_window_size * j, ',', sliding_window_size * (j + 1), ')')
-        segment_ = []
-        for i in range(0, num_features):
-            feature_list = np_frames[j * sliding_window_size : (j + 1) * sliding_window_size, i]
-            # print(feature_list)
-            mean = feature_calculators.mean(feature_list)
-            maximum = feature_calculators.maximum(feature_list)
-            minimum = feature_calculators.minimum(feature_list)
-            mean_change = feature_calculators.mean_change(feature_list)
-            mean_abs_change = feature_calculators.mean_abs_change(feature_list)
-            variance = feature_calculators.variance(feature_list)
-            cid_ce = feature_calculators.cid_ce(feature_list, True)
-            
-            merged_frame = [mean, maximum, minimum, mean_change, mean_abs_change, variance, cid_ce]
-        
-            segment_ += merged_frame
-            
-        pd.DataFrame([segment_]).to_csv(
-                output_file,
-                mode='a',
-                header=False, index=None)
-            
-
-def cal_dis_position(ego, agent):
-    return math.sqrt((ego.x - agent.x) ** 2 + (ego.y - agent.y) ** 2 + (ego.z - agent.z) ** 2)
-
-def collecting_data():
-    print(10*'*', "Collecting data to create frame", 10*'*')
-    agents = sim.get_agents()
-    ego = agents[0]
-    
-    ego_rotation = ego.state.rotation
-    ego_velocity = ego.state.velocity
-    ego_position = ego.state.position
-    
-    obs_info = []
-    
-    for i in range(1, len(agents)):
-        a_position = agents[i].state.position
-        a_velocity = agents[i].state.velocity
-        a_rotation = agents[i].state.rotation
-        
-        dis_to_ego = cal_dis_position(ego_position, a_position)
-        
-        type = 1 if isinstance(agents[i], NpcVehicle) else 0 
-        
-        obs_info.append({
-            'dis_to_ego': dis_to_ego,
-            'rotation': a_rotation,
-            'velocity': a_velocity,
-            'type': type
-        })
-        
-    weather = sim.weather
-    time = sim.time_of_day
-    signal = sim.get_controllable(ego_position, "signal").current_state
-    
-    control_info, chassis_info = get_apollo_ctrl_msg()
-    
-    ego_acceleration = control_info['acceleration']
-    ego_brake = chassis_info['brake_percentage']
-    
-    sorted_obs = sorted(obs_info, key=lambda x: x["dis_to_ego"], reverse=True)
-    
-    # print("Ego Position: ", ego_position)
-    # print("Ego Rotation: ", ego_rotation)
-    # print("Ego Velocity: ", ego_velocity)
-    # print("Ego Acceleration: ", ego_acceleration)
-    # print("Ego Brake Percentage: ", ego_brake)
-    # print("Obstacle info: ", sorted_obs)
-    # print("Weather: ", weather)
-    # print("Time: ", time)
-    # print("Traffic light: ", signal)
-    
-    state = []
-    # ego rotation
-    state.append(ego_rotation.x)
-    state.append(ego_rotation.y)
-    state.append(ego_rotation.z)
-    
-    # ego velocity
-    state.append(ego_velocity.x)
-    state.append(ego_velocity.y)
-    state.append(ego_velocity.z)
-    
-    # ego acceleration
-    state.append(ego_acceleration)
-    
-    # ego brake
-    state.append(ego_brake)
-    
-    for i in range(0, min(len(sorted_obs), 3)):
-        # dis from obs to ego
-        state.append(sorted_obs[i]['dis_to_ego'])
-        
-        # obs rotation
-        state.append(sorted_obs[i]['rotation'].x)
-        state.append(sorted_obs[i]['rotation'].y)
-        state.append(sorted_obs[i]['rotation'].z)
-        
-        # obs velocity
-        state.append(sorted_obs[i]['velocity'].x)
-        state.append(sorted_obs[i]['velocity'].y)
-        state.append(sorted_obs[i]['velocity'].z)
-        
-        # obs type
-        state.append(sorted_obs[i]['type'])
-    
-    # violation_type = []
-    
-    # interpreter_signal(signal.current_state)
-    
-    # add default value if not enough 3 obstacle
-    if len(state) < 32:
-        while len(state) < 32:
-            state.append(0)
-            
-    # weather state
-    state.append(weather.rain)
-    state.append(weather.fog)
-    state.append(weather.wetness)
-    
-    # time state
-    state.append(time)
-    
-    # traffic light state
-    if signal == 'green':
-        state.append(0)
-    elif signal == 'red':
-        state.append(1)
-    elif signal == 'yellow':
-        state.append(2)
-    else:
-        state.append(-1)    
-    
-    # print(state)
-    
-    return state
 
 # calculate metrics
 def calculate_metrics(agents, ego):
@@ -505,10 +345,8 @@ def calculate_metrics(agents, ego):
     distance_list = []
     probability_list = []
     vioRate_list = []
-    frame_list = []
     i = 0
     time_step = 0.5
-    sliding_step = 0.125
     speed = 0
 
     if SAVE_SCENARIO:
@@ -521,17 +359,7 @@ def calculate_metrics(agents, ego):
     while i < observation_time / time_step:
         
         check_modules_status()
-        
-        num_of_frame = int(time_step / sliding_step)
-        
-        # print("Number of frame", num_of_frame)
-        
-        for j in range(0, num_of_frame):
-            sim.run(time_limit=sliding_step)
-            
-            frame = collecting_data()
-            frame_list.append(frame)
-        
+
         sim.run(time_limit=time_step)  # , time_scale=2
         
         ego_curr_acc, brake_percentage, orientation = get_sub_state()
@@ -579,7 +407,7 @@ def calculate_metrics(agents, ego):
         
         thread = threading.Thread(
             target=calculate_measures_thread,
-            args=(state_list, ego_state, isNpcVehicle, TTC_list, vioRate_list, agent_uid, frame_list, distance_list, 
+            args=(state_list, ego_state, isNpcVehicle, TTC_list, vioRate_list, agent_uid, distance_list, 
                   probability_list, current_signals, ego_curr_acc, prev_brake_percentage, brake_percentage, 
                   road, next_road, p_lane_id, prev_tlight_sign, orientation, MID_POINT, collision_tag,)
         )
@@ -593,6 +421,7 @@ def calculate_metrics(agents, ego):
         
         brake_percentage_queue[brake_count % 4] = brake_percentage
         brake_count = (brake_count + 1) % 4
+        
         
 
     # if SAVE_SCENARIO:
@@ -619,13 +448,6 @@ def calculate_metrics(agents, ego):
         cnt_vio = 1
     
     vioRate = total_rate / cnt_vio
-    
-    # print("Merged Frame List: ")
-    
-    merging_frame(frame_list)
-    
-    # print(merged_frame_list)
-    
     return {'TTC': TTC_list, 'distance': distance_list, 'collision_type': collision_type, 'collision_uid': collision_uid_,
             'collision_speed': collision_speed_, 'probability': probability_list, 'vioRate': max_values}  # 'uncomfortable': uncomfortable,
 
@@ -686,7 +508,6 @@ def set_time():
 """
 Command APIs
 """
-
 
 @app.route('/LGSVL/LoadScene', methods=['POST'])
 def load_scene():
@@ -1418,24 +1239,6 @@ def get_apollo_sub_msg():
 
     return local_info, control_info, tlight_info, chassis_info
 
-def get_apollo_ctrl_msg():
-    global msg_socket
-
-    msg_socket.send(json.dumps(["get_control_msg"]).encode("utf-8"))
-    data = msg_socket.recv(2048)
-
-    data = json.loads(data.decode("utf-8"))
-
-    control_info = data["control_info"]
-    chassis_info = data["chassis_info"]
-    
-    # print("Get Apollo Sub Message")
-    
-    # print("Traffic light info: ", tlight_info)
-    # print("Control info: ", control_info)
-    # print("Chassis info: ", chassis_info)
-
-    return control_info, chassis_info
 
 def cal_dis(x_a, y_a, z_a, x_b, y_b, z_b):
     return math.sqrt((x_a - x_b) ** 2 + (y_a - y_b) ** 2 + (z_a - z_b) ** 2)
