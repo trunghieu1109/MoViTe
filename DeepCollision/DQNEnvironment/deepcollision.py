@@ -11,7 +11,7 @@ import pickle
 
 from utils import *
 
-current_eps = '200'
+current_eps = ''
 final_eps = '600'
 
 road_num = '1'  # the Road Number
@@ -157,7 +157,7 @@ class DQN(object):
                 HyperParameter['EPS_START'] - HyperParameter['EPS_END']) * math.exp(
             -1. * self.steps_done / HyperParameter['EPS_DECAY'])
         
-        eps_threshold = 0.2
+        # eps_threshold = 0.2
         
         print("eps threshold:", eps_threshold)
         
@@ -371,25 +371,24 @@ if __name__ == '__main__':
     dqn = DQN()
     # print(dqn.eval_net.state_dict())
     # print(dqn.target_net.state_dict())
-    if int(road_num) >= 2:
-        dqn.eval_net.load_state_dict(torch.load('./model/DeepCollision_'+second+'s/eval_net_600_road'+str(int(road_num)-1)+'.pt'))
+    # if int(road_num) >= 2:
+    #     dqn.eval_net.load_state_dict(torch.load('./model/DeepCollision_'+second+'s/eval_net_600_road'+str(int(road_num)-1)+'.pt'))
+    
+    folder_path = './model/DeepCollision_6s/'
+    
+    if not os.path.isdir(folder_path):
+        print("Create dir", folder_path)
+        os.makedirs(folder_path)
         
         
     if current_eps != '':
         print("Continue at episode: " + current_eps)
-        with open('./model/DeepCollision_6s/rl_network_' + current_eps + '_road' + road_num + '.pkl', "rb") as file:
+        with open(folder_path + 'rl_network_' + current_eps + '_road' + road_num + '.pkl', "rb") as file:
             dqn = pickle.load(file)
-        dqn.eval_net.load_state_dict(torch.load('./model/DeepCollision_6s/eval_net_' + current_eps + '_road' + road_num + '.pt'))
-        dqn.target_net.load_state_dict(torch.load('./model/DeepCollision_6s/target_net_' + current_eps + '_road' + road_num + '.pt'))
+        dqn.eval_net.load_state_dict(torch.load(folder_path + 'eval_net_' + current_eps + '_road' + road_num + '.pt'))
+        dqn.target_net.load_state_dict(torch.load(folder_path + 'target_net_' + current_eps + '_road' + road_num + '.pt'))
         print("Learning Counter: ", dqn.learn_step_counter)
         print("Memory Counter: ", dqn.memory_counter)
-        # dqn.steps_done = 7420
-    # dqn.target_net.load_state_dict(torch.load('./model/target_net_2.pt'))
-    # print(dqn.eval_net.state_dict())
-    # print(dqn.target_net.state_dict())
-    # requests.post("http://localhost:8933/LGSVL/LoadScene?scene=SanFrancisco")
-
-    # comm_apollo.send(str(1).encode())
 
     print('\nCollecting experience...')
     road_num_int = int(road_num)
@@ -397,20 +396,9 @@ if __name__ == '__main__':
     while road_num_int <= 1:
         road_num = str(road_num_int)
 
-        # df_title = pd.DataFrame([title])
-        # file_name = str(int(time.time()))
-        # df_title.to_csv('../ExperimentData/DQN_experiment_' + second + 's_' + file_name + '_road' + road_num + '.csv',
-        #                 mode='w', header=False,
-        #                 index=None)
-        # title2 = ["per_confi", "pred_confi", "reward"]
-        # pd.DataFrame([title2]).to_csv("./log/per_pred_reward_" + file_name + ".csv", mode='w', header=False, index=None)
-
-
         requests.post("http://localhost:8933/LGSVL/SetObTime?observation_time=" + '6')
-        #isRouted = False
-    
-        
-        for i_episode in range(200, 400):
+
+        for i_episode in range(0, 200):
             print('------------------------------------------------------')
             print('+                 Road, Episode: ', road_num_int, i_episode, '                +')
             print('------------------------------------------------------')
@@ -418,14 +406,8 @@ if __name__ == '__main__':
             #    requests.post("http://localhost:8933/LGSVL/SaveTransform")
             requests.post("http://localhost:8933/LGSVL/LoadScene?scene=bd77ac3b-fbc3-41c3-a806-25915c777022&road_num=" + road_num)
 
-            # comm_apollo.send(str(1).encode())
-            # if i_episode % 9 == 0:
-            #     requests.post("http://localhost:8933/LGSVL/LoadScene?scene=SanFrancisco")
-            # else:
-            #     requests.post("http://localhost:8933/LGSVL/EGOVehicle/Reset")
-            #     requests.post("http://localhost:8933/LGSVL/Reset")
             s = get_environment_state()
-            # s = format_state(get_environment_state())
+
             ep_r = 0
             step = 0
             while True:
@@ -461,12 +443,12 @@ if __name__ == '__main__':
                     # print(dqn.eval_net.state_dict())
                     # print(dqn.target_net.state_dict())
                     torch.save(dqn.eval_net.state_dict(),
-                               './model/DeepCollision_6s/eval_net_' + str(
+                               folder_path + 'eval_net_' + str(
                                    i_episode + 1) + '_road' + road_num + '.pt')
                     torch.save(dqn.target_net.state_dict(),
-                               './model/DeepCollision_6s/target_net_' + str(
+                               folder_path + 'target_net_' + str(
                                    i_episode + 1) + '_road' + road_num + '.pt')
-                    with open('./model/DeepCollision_6s/rl_network_' + str(
+                    with open(folder_path + 'rl_network_' + str(
                                    i_episode + 1) + '_road' + road_num + '.pkl', "wb") as file:
                         pickle.dump(dqn, file)
                     print("Save dqn: ", "Memory Counter: ", dqn.memory_counter, "Learning Counter: ", dqn.learn_step_counter)
