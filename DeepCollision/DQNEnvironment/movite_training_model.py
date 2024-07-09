@@ -34,6 +34,9 @@ goal = [341.1, 35.5, 289.4]
 prev_position = None
 is_stopped = False
 
+w_vio_prob = 0.6
+w_div_level = 0.4
+
 def get_environment_state():
     global per_confi
     global pred_confi
@@ -167,7 +170,7 @@ class DQN(object):
                 HyperParameter['EPS_START'] - HyperParameter['EPS_END']) * math.exp(
             -1. * self.steps_done / HyperParameter['EPS_DECAY'])
         
-        # eps_threshold = 0.2
+        eps_threshold = 0.2
         
         print("eps threshold:", eps_threshold)
         
@@ -340,20 +343,31 @@ def calculate_reward(action_id):
     :param action_id:
     :return:
     """
+    
+    global w_div_level
+    global w_vio_prob
+    
     vioRate_list, obstacle_uid = execute_action(action_id)
     observation = get_environment_state()
     action_reward = 0
     violation_rate = 0
+    diversity_level = 0
     episode_done = judge_done()
     
     violation_rate = round(float(
         (requests.get("http://localhost:8933/LGSVL/Status/ViolationRate")).content.decode(
+            encoding='utf-8')), 6)
+    
+    diversity_level = round(float(
+        (requests.get("http://localhost:8933/LGSVL/Status/DiversityLevel")).content.decode(
             encoding='utf-8')), 6)
 
     if violation_rate < 0.2:
         action_reward = -1
     else:
         action_reward = violation_rate
+        
+    action_reward = w_vio_prob * action_reward + w_div_level * diversity_level
             
     return observation, action_reward, violation_rate, episode_done, vioRate_list, obstacle_uid
 
@@ -380,14 +394,16 @@ if __name__ == '__main__':
     if current_eps != '':
         print("Continue at episode: " + current_eps)
         
-        with open('./model/movite_tartu_min_dis_1_fix/rl_network_' + current_eps + '_road' + road_num + '.pkl', "rb") as file:
+        with open('./model/movite_tartu_min_dis_1_5_fix/rl_network_' + current_eps + '_road' + road_num + '.pkl', "rb") as file:
             dqn = pickle.load(file)
         # print(dqn.buffer_memory.real_size, dqn.memory_counter, dqn.steps_done, dqn.learn_step_counter)
-        dqn.eval_net.load_state_dict(torch.load('./model/movite_tartu_min_dis_1_fix/eval_net_' + current_eps + '_road' + road_num + '.pt'))
-        dqn.target_net.load_state_dict(torch.load('./model/movite_tartu_min_dis_1_fix/target_net_' + current_eps + '_road' + road_num + '.pt'))
+        dqn.eval_net.load_state_dict(torch.load('./model/movite_tartu_min_dis_1_5_fix/eval_net_' + current_eps + '_road' + road_num + '.pt'))
+        dqn.target_net.load_state_dict(torch.load('./model/movite_tartu_min_dis_1_5_fix/target_net_' + current_eps + '_road' + road_num + '.pt'))
         # restore memory buffer
-        with open('./model/movite_tartu_min_dis_1_fix/memory_buffer_' + current_eps + '_road' + road_num + '.pkl', "rb") as file:
+        with open('./model/movite_tartu_min_dis_1_5_fix/memory_buffer_' + current_eps + '_road' + road_num + '.pkl', "rb") as file:
             dqn.buffer_memory = pickle.load(file)
+            
+        # requests.post("http://localhost:8933/LGSVL/LoadViolationWeight")
             
         print(dqn.buffer_memory.real_size, dqn.learn_step_counter, dqn.steps_done)
         
@@ -531,19 +547,21 @@ if __name__ == '__main__':
                     # print(dqn.eval_net.state_dict())
                     # print(dqn.target_net.state_dict())
                     torch.save(dqn.eval_net.state_dict(),
-                               './model/movite_tartu_min_dis_1_fix/eval_net_' + str(
+                               './model/movite_tartu_min_dis_1_5_fix/eval_net_' + str(
                                    i_episode + 1) + '_road' + road_num + '.pt')
                     torch.save(dqn.target_net.state_dict(),
-                               './model/movite_tartu_min_dis_1_fix/target_net_' + str(
+                               './model/movite_tartu_min_dis_1_5_fix/target_net_' + str(
                                    i_episode + 1) + '_road' + road_num + '.pt')
                     
-                    with open('./model/movite_tartu_min_dis_1_fix/memory_buffer_' + str(
+                    with open('./model/movite_tartu_min_dis_1_5_fix/memory_buffer_' + str(
                                    i_episode + 1) + '_road' + road_num + '.pkl', "wb") as file:
                         pickle.dump(dqn.buffer_memory, file)
                         
-                    with open('./model/movite_tartu_min_dis_1_fix/rl_network_' + str(
+                    with open('./model/movite_tartu_min_dis_1_5_fix/rl_network_' + str(
                                    i_episode + 1) + '_road' + road_num + '.pkl', "wb") as file:
                         pickle.dump(dqn, file)
+                        
+                    # requests.post("http://localhost:8933/LGSVL/SaveViolationWeight")
                     
                 if done:
                     # comm_apollo.send(repr('1').encode())

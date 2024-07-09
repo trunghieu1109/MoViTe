@@ -11,6 +11,7 @@ import numpy as np
 import pickle
 # from ScenarioCollector.createUtils import *
 from collision_utils_origin_modified import pedestrian, npc_vehicle, calculate_measures
+from clustering import cluster
 import math
 import threading
 from lgsvl.agent import NpcVehicle
@@ -23,6 +24,7 @@ import torch
 from lgsvl.dreamview import CoordType
 import requests
 from numba import jit
+from diversity_utils import merging_frame, clustering, calculate_diversity_level
 
 
 ########################################
@@ -43,12 +45,14 @@ DREAMVIEW = None
 # init variable
 
 equal_prob = True
-
+isCalculateDiversity = True
 VIOLATION_WEIGHT_DECAY = 0.1
 UPDATE_WEIGHT_FREQ = 10
+flexible_weight = False
 update_counter = 0
 collision_object = None
 probability = 0
+diversity_level = 0
 time_step_collision_object = None
 sensors = None
 DATETIME_UNIX = None
@@ -119,7 +123,7 @@ msg_socket.connect(server_address)
 
 # import lane_information
 
-map = 'tartu'
+map = 'tartu' # map: tartu, sanfrancisco, borregasave
 
 lanes_map_file = "{}_lanes.pkl".format(map)
 lanes_map = None
@@ -146,16 +150,13 @@ prev_lane_id = ""
 brake_percentage_queue = []
 brake_count = 0
 
+time_stamp = str(int(time.time()))
+
 violation_weight_file = './violation_weight/{}_violation_weight'.format(map)
 
 violation_weight = [1/7, 1/7, 1/7, 1/7, 1/7, 1/7, 1/7]
 
-# if os.path.exists(violation_weight_file):
-#     with open(violation_weight_file, "rb") as file:
-#         violation_weight = pickle.load(file)
-        
-#     file.close()
-    
+violation_segment = []
 
 # on collision callback function
 def on_collision(agent1, agent2, contact):
@@ -273,15 +274,14 @@ def update_violation_weight(violation_list):
         if reduced_info[i] == 1:
             violation_weight[i] += reduced_part / rest
 
-    if update_counter % UPDATE_WEIGHT_FREQ == 0:
+    # if update_counter % UPDATE_WEIGHT_FREQ == 0:
         
-        print("UPDATE VIOLATION WEIGHT", violation_weight)
+    #     print("UPDATE VIOLATION WEIGHT", violation_weight)
         
-        with open(violation_weight_file, 'wb') as file:
-            pickle.dump(violation_weight, file)
+        
 
 # calculate measures thread, use in multi-thread
-def calculate_measures_thread(state_list, ego_state, isNpcVehicle, TTC_list, vioRate_list, agent_uid, distance_list, probability_list, 
+def calculate_measures_thread(state_list, ego_state, isNpcVehicle, TTC_list, vioRate_list, agent_uid, frame_list, distance_list, probability_list, 
                               current_signals, ego_curr_acc, prev_brake_percentage, brake_percentage, road, next_road, p_lane_id, 
                               prev_tlight_sign_, orientation, mid_point=None, collision_tag_=False):
 
@@ -309,6 +309,125 @@ def calculate_measures_thread(state_list, ego_state, isNpcVehicle, TTC_list, vio
     probability_list.append(round(probability2, 6))
     
     vioRate_list.append(vioRate)
+    
+    # for i in range(len(frame_list) - 4, len(frame_list)):
+    #     for j in range(0, 7):
+    #         if vioRate[j] == 1.0:
+    #             frame_list[i].append(1)
+    #         else:
+    #             frame_list[i].append(0)
+
+def cal_dis_position(ego, agent):
+    return math.sqrt((ego.x - agent.x) ** 2 + (ego.y - agent.y) ** 2 + (ego.z - agent.z) ** 2)        
+        
+def collecting_data(sim):
+    print(10*'*', "Collecting data to create frame", 10*'*')
+    agents = sim.get_agents()
+    ego = agents[0]
+    
+    ego_rotation = ego.state.rotation
+    ego_velocity = ego.state.velocity
+    ego_position = ego.state.position
+    
+    obs_info = []
+    
+    for i in range(1, len(agents)):
+        a_position = agents[i].state.position
+        a_velocity = agents[i].state.velocity
+        a_rotation = agents[i].state.rotation
+        
+        dis_to_ego = cal_dis_position(ego_position, a_position)
+        
+        type = 1 if isinstance(agents[i], NpcVehicle) else 0 
+        
+        obs_info.append({
+            'dis_to_ego': dis_to_ego,
+            'rotation': a_rotation,
+            'velocity': a_velocity,
+            'type': type
+        })
+        
+    weather = sim.weather
+    time = sim.time_of_day
+    signal = sim.get_controllable(ego_position, "signal").current_state
+    
+    control_info, chassis_info = get_apollo_ctrl_msg()
+    
+    ego_acceleration = control_info['acceleration']
+    ego_brake = chassis_info['brake_percentage']
+    
+    sorted_obs = sorted(obs_info, key=lambda x: x["dis_to_ego"], reverse=True)
+    
+    # print("Ego Position: ", ego_position)
+    # print("Ego Rotation: ", ego_rotation)
+    # print("Ego Velocity: ", ego_velocity)
+    # print("Ego Acceleration: ", ego_acceleration)
+    # print("Ego Brake Percentage: ", ego_brake)
+    # print("Obstacle info: ", sorted_obs)
+    # print("Weather: ", weather)
+    # print("Time: ", time)
+    # print("Traffic light: ", signal)
+    
+    state = []
+    # ego rotation
+    state.append(ego_rotation.x)
+    state.append(ego_rotation.y)
+    state.append(ego_rotation.z)
+    
+    # ego velocity
+    state.append(ego_velocity.x)
+    state.append(ego_velocity.y)
+    state.append(ego_velocity.z)
+    
+    # ego acceleration
+    state.append(ego_acceleration)
+    
+    # ego brake
+    state.append(ego_brake)
+    
+    for i in range(0, min(len(sorted_obs), 2)):
+        # dis from obs to ego
+        state.append(sorted_obs[i]['dis_to_ego'])
+        
+        # obs rotation
+        state.append(sorted_obs[i]['rotation'].x)
+        state.append(sorted_obs[i]['rotation'].y)
+        state.append(sorted_obs[i]['rotation'].z)
+        
+        # obs velocity
+        state.append(sorted_obs[i]['velocity'].x)
+        state.append(sorted_obs[i]['velocity'].y)
+        state.append(sorted_obs[i]['velocity'].z)
+        
+        # obs type
+        state.append(sorted_obs[i]['type'])
+    
+    # add default value if not enough 3 obstacles
+    if len(state) < 24:
+        while len(state) < 24:
+            state.append(0)
+            
+    # weather state
+    state.append(weather.rain * 100 + weather.fog * 10 + weather.wetness)
+    # state.append(weather.fog)
+    # state.append(weather.wetness)
+    
+    # time state
+    state.append(time)
+    
+    # traffic light state
+    if signal == 'green':
+        state.append(0)
+    elif signal == 'red':
+        state.append(1)
+    elif signal == 'yellow':
+        state.append(2)
+    else:
+        state.append(-1)    
+    
+    # print(state)
+    
+    return state
 
 # calculate metrics
 def calculate_metrics(agents, ego):
@@ -332,6 +451,11 @@ def calculate_metrics(agents, ego):
     global equal_prob
     global brake_percentage_queue
     global brake_count
+    global diversity_level
+    global flexible_weight
+    global isCalculateDiversity
+    
+    diversity_level = 0
 
     collision_object = None
     collision_speed = 0  # 0 indicates there is no collision occurred.
@@ -345,8 +469,10 @@ def calculate_metrics(agents, ego):
     distance_list = []
     probability_list = []
     vioRate_list = []
+    frame_list = []
     i = 0
     time_step = 0.5
+    sliding_step = 0.125
     speed = 0
 
     if SAVE_SCENARIO:
@@ -359,8 +485,18 @@ def calculate_metrics(agents, ego):
     while i < observation_time / time_step:
         
         check_modules_status()
-
-        sim.run(time_limit=time_step)  # , time_scale=2
+        
+        num_of_frame = int(time_step / sliding_step)
+        
+        # print("Number of frame", num_of_frame)
+        
+        for j in range(0, num_of_frame):
+            sim.run(time_limit=sliding_step)
+            if isCalculateDiversity:
+                frame = collecting_data(sim)
+                frame_list.append(frame) 
+        
+        # sim.run(time_limit=time_step)  # , time_scale=2
         
         ego_curr_acc, brake_percentage, orientation = get_sub_state()
         
@@ -407,7 +543,7 @@ def calculate_metrics(agents, ego):
         
         thread = threading.Thread(
             target=calculate_measures_thread,
-            args=(state_list, ego_state, isNpcVehicle, TTC_list, vioRate_list, agent_uid, distance_list, 
+            args=(state_list, ego_state, isNpcVehicle, TTC_list, vioRate_list, agent_uid, frame_list, distance_list, 
                   probability_list, current_signals, ego_curr_acc, prev_brake_percentage, brake_percentage, 
                   road, next_road, p_lane_id, prev_tlight_sign, orientation, MID_POINT, collision_tag,)
         )
@@ -421,7 +557,6 @@ def calculate_metrics(agents, ego):
         
         brake_percentage_queue[brake_count % 4] = brake_percentage
         brake_count = (brake_count + 1) % 4
-        
         
 
     # if SAVE_SCENARIO:
@@ -439,15 +574,35 @@ def calculate_metrics(agents, ego):
     cnt_vio = 0
     total_rate = 0
     
+    isViolation = False
+    
     for i in range (0, len(max_values)):
         if max_values[i] > 0:
             cnt_vio += 1
-            total_rate += max_values[i]
+            if flexible_weight:
+                total_rate += max_values[i] * violation_weight[i]
+            else:
+                total_rate += max_values[i]
+            if float(max_values[i]) == 1.0:
+                isViolation = True
     
     if cnt_vio == 0:
         cnt_vio = 1
     
     vioRate = total_rate / cnt_vio
+    
+    # print("Merged Frame List: ")
+    
+    if flexible_weight:
+        update_violation_weight(max_values)
+    
+    if isViolation and isCalculateDiversity:
+        merging_frame(frame_list)
+        cluster_result = clustering()
+        diversity_level = calculate_diversity_level(cluster_result)
+    
+    # print(merged_frame_list)
+    
     return {'TTC': TTC_list, 'distance': distance_list, 'collision_type': collision_type, 'collision_uid': collision_uid_,
             'collision_speed': collision_speed_, 'probability': probability_list, 'vioRate': max_values}  # 'uncomfortable': uncomfortable,
 
@@ -508,6 +663,7 @@ def set_time():
 """
 Command APIs
 """
+
 
 @app.route('/LGSVL/LoadScene', methods=['POST'])
 def load_scene():
@@ -734,6 +890,27 @@ def save_state():
     file.write(b)
     file.close()
     return 'save successfully'
+
+@app.route('/LGSVL/SaveViolationWeight', methods=['POST'])
+def save_violation_weight():
+    global violation_weight_file
+    global violation_weight
+    
+    with open(violation_weight_file, 'wb') as file:
+        pickle.dump(violation_weight, file)
+        
+
+@app.route('/LGSVL/LoadViolationWeight', methods=['POST'])
+def load_violation_weight():
+    global violation_weight_file
+    global violation_weight
+
+    if os.path.exists(violation_weight_file):
+        with open(violation_weight_file, "rb") as file:
+            violation_weight = pickle.load(file)
+            
+        file.close()
+    
 
 
 @app.route('/LGSVL/SetDestination', methods=['POST'])
@@ -1239,6 +1416,24 @@ def get_apollo_sub_msg():
 
     return local_info, control_info, tlight_info, chassis_info
 
+def get_apollo_ctrl_msg():
+    global msg_socket
+
+    msg_socket.send(json.dumps(["get_control_msg"]).encode("utf-8"))
+    data = msg_socket.recv(2048)
+
+    data = json.loads(data.decode("utf-8"))
+
+    control_info = data["control_info"]
+    chassis_info = data["chassis_info"]
+    
+    # print("Get Apollo Sub Message")
+    
+    # print("Traffic light info: ", tlight_info)
+    # print("Control info: ", control_info)
+    # print("Chassis info: ", chassis_info)
+
+    return control_info, chassis_info
 
 def cal_dis(x_a, y_a, z_a, x_b, y_b, z_b):
     return math.sqrt((x_a - x_b) ** 2 + (y_a - y_b) ** 2 + (z_a - z_b) ** 2)
@@ -1802,6 +1997,14 @@ def get_c_probability():
     c_probability = probability
     probability = 0
     return str(c_probability)
+
+@app.route('/LGSVL/Status/DiversityLevel', methods=['GET'])
+def get_diversity_level():
+    global diversity_level
+    d_level = diversity_level
+    diversity_level = 0
+    return str(d_level)
+
 
 @app.route('/LGSVL/Status/ViolationRate', methods=['GET'])
 def get_violation_rate():
