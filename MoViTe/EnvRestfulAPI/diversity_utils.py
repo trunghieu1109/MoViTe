@@ -7,7 +7,6 @@ from tsfresh.feature_extraction import feature_calculators
 from lgsvl.agent import NpcVehicle
 # from movite_api_server import get_apollo_ctrl_msg
 
-clustering_timestamp = str(int(time.time()))
 segment_counter = 0
 sliding_window_size = 4
 num_of_vec = 48
@@ -52,8 +51,7 @@ def calculate_diversity_level(cluster_result):
     return min_dis
 
 
-def clustering():
-    global clustering_timestamp
+def clustering(clustering_timestamp):
     
     output_file = './merged_state/merged_state_{}.csv'.format(clustering_timestamp)
     
@@ -61,10 +59,9 @@ def clustering():
     
     return cluster_result
 
-def merging_frame(frames):
+def merging_frame(frames, clustering_timestamp):
     
     global segment_counter
-    global clustering_timestamp
     # global violation_segment
     global sliding_window_size
     

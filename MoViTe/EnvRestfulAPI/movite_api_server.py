@@ -19,6 +19,7 @@ import random
 import queue
 import pandas as pd
 import pickle
+import shutil
 
 import torch
 from lgsvl.dreamview import CoordType
@@ -100,6 +101,8 @@ next_lane_waypoint = {
     'lane_id': ""
 }
 
+clustering_timestamp = str(int(time.time()))
+
 current_signals = {}
 
 speed_list = []
@@ -111,18 +114,17 @@ u = 0.6
 z_axis = lgsvl.Vector(0, 0, 100)
 prefix = '/deepqtest/lgsvl-api/'
 
-# setup connect to apollo (adjust to suit specific cases)
+# setup connect to apollo
+
 APOLLO_HOST = '112.137.129.158'  # or 'localhost'
 PORT = 8966
-DREAMVIEW_PORT = 9988
-BRIDGE_PORT = 9090
 
 msg_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 server_address = (APOLLO_HOST, PORT)
 
 msg_socket.connect(server_address)
 
-# import lanes, signals information
+# import lane_information
 
 map = 'tartu' # map: tartu, sanfrancisco, borregasave
 
@@ -449,6 +451,7 @@ def calculate_metrics(agents, ego):
     global diversity_level
     global flexible_weight
     global isCalculateDiversity
+    global clustering_timestamp
     
     diversity_level = 0
 
@@ -594,8 +597,8 @@ def calculate_metrics(agents, ego):
         update_violation_weight(max_values)
     
     if isViolation and isCalculateDiversity:
-        merging_frame(frame_list)
-        cluster_result = clustering()
+        merging_frame(frame_list, clustering_timestamp)
+        cluster_result = clustering(clustering_timestamp)
         diversity_level = calculate_diversity_level(cluster_result)
     
     # print(merged_frame_list)
@@ -672,9 +675,6 @@ def load_scene():
     global DREAMVIEW
     global brake_count
     global brake_percentage_queue
-    global DREAMVIEW_PORT
-    global BRIDGE_PORT
-    
     prev_lane_id = ""
     prev_tlight_sign = {}
     brake_count = 0
@@ -729,13 +729,13 @@ def load_scene():
 
     forward = lgsvl.utils.transform_to_forward(state.transform)
 
-    state.velocity = 3.2 * forward
+    state.velocity = 3 * forward
 
     EGO = sim.add_agent("8e776f67-63d6-4fa3-8587-ad00a0b41034",
                         lgsvl.AgentType.EGO, state)
-    EGO.connect_bridge(os.environ.get("BRIDGE_HOST", APOLLO_HOST), BRIDGE_PORT)
+    EGO.connect_bridge(os.environ.get("BRIDGE_HOST", APOLLO_HOST), 9090)
     
-    DREAMVIEW = lgsvl.dreamview.Connection(sim, EGO, APOLLO_HOST, str(DREAMVIEW_PORT))
+    DREAMVIEW = lgsvl.dreamview.Connection(sim, EGO, APOLLO_HOST, '9988')
 
     sensors = EGO.get_sensors()
     sim.get_agents()[0].on_collision(on_collision)
@@ -812,7 +812,7 @@ def reset_env():
     sim.reset()
     ego = sim.add_agent("8e776f67-63d6-4fa3-8587-ad00a0b41034",
                         lgsvl.AgentType.EGO, state)
-    ego.connect_bridge(os.environ.get("BRIDGE_HOST", APOLLO_HOST), BRIDGE_PORT)
+    ego.connect_bridge(os.environ.get("BRIDGE_HOST", APOLLO_HOST), 9090)
     global sensors
     sensors = ego.get_sensors()
     sim.get_agents()[0].on_collision(on_collision)
@@ -945,6 +945,35 @@ def set_mode():
         
     return 'Set mode successfully'
 
+@app.route('/LGSVL/SaveMergedState', methods=['POST'])
+def save_merged_state():
+    global map
+    global clustering_timestamp
+    
+    eps = str(request.args.get('eps'))
+    
+    merged_state_file = './merged_state/{}_merged_state_{}.csv'.format(map, eps)
+    
+    source_file = './merged_state/merged_state_{}.csv'.format(clustering_timestamp)
+    
+    shutil.copy(source_file, merged_state_file)
+        
+    return 'Save successfully'
+
+@app.route('/LGSVL/LoadMergedState', methods=['POST'])
+def load_merged_state():
+    global map
+    global clustering_timestamp
+    
+    eps = str(request.args.get('eps'))
+    
+    merged_state_file = './merged_state/{}_merged_state_{}.csv'.format(map, eps)
+    
+    current_file = './merged_state/merged_state_{}.csv'.format(clustering_timestamp)
+    
+    shutil.copy(merged_state_file, current_file)
+        
+    return 'Load successfully'
 
 @app.route('/LGSVL/SetDestination', methods=['POST'])
 def set_destination():
@@ -955,6 +984,7 @@ def set_destination():
     y = float(request.args.get('des_y'))
     z = float(request.args.get('des_z'))
     print("x y z: ", x, y, z)
+    # DREAMVIEW = lgsvl.dreamview.Connection(sim, EGO, APOLLO_HOST, '9988')
     DREAMVIEW.set_destination(x, z, y, coord_type=CoordType.Unity)
     return 'set destination.'
 
@@ -1478,6 +1508,7 @@ def check_modules_status():
     global DREAMVIEW
     
     # print("Create connection")
+    # DREAMVIEW = lgsvl.dreamview.Connection(sim, EGO, ip=APOLLO_HOST, port='9988')
     # print("Create connection successfully")
     
     

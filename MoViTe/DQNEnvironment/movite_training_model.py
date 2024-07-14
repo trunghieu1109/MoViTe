@@ -425,6 +425,10 @@ if __name__ == '__main__':
         if mode == 'flexible':
             requests.post("http://localhost:8933/LGSVL/LoadViolationWeight?eps=" + str(current_eps))
             
+        if mode == 'diversity':
+            requests.post("http://localhost:8933/LGSVL/LoadMergedState?eps=" + str(current_eps))
+            
+            
         print(dqn.buffer_memory.real_size, dqn.learn_step_counter, dqn.steps_done)
         
         # print(dqn.buffer_memory.real_size, dqn.memory_counter, dqn.steps_done, dqn.learn_step_counter)
@@ -565,6 +569,9 @@ if __name__ == '__main__':
                     
                     if mode == 'flexible':
                         requests.post("http://localhost:8933/LGSVL/SaveViolationWeight?eps=" + str(i_episode + 1))
+                        
+                    if mode == 'diversity':
+                        requests.post("http://localhost:8933/LGSVL/SaveMergedState?eps=" + str(i_episode + 1))
                     
                 if done:
                     collide_with_obstacle = False
