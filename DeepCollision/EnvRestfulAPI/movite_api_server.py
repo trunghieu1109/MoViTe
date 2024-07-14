@@ -111,21 +111,22 @@ u = 0.6
 z_axis = lgsvl.Vector(0, 0, 100)
 prefix = '/deepqtest/lgsvl-api/'
 
-# setup connect to apollo
-
+# setup connect to apollo (adjust to suit specific cases)
 APOLLO_HOST = '112.137.129.158'  # or 'localhost'
 PORT = 8966
+DREAMVIEW_PORT = 9988
+BRIDGE_PORT = 9090
 
 msg_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 server_address = (APOLLO_HOST, PORT)
 
 msg_socket.connect(server_address)
 
-# import lane_information
+# import lanes, signals information
 
 map = 'tartu' # map: tartu, sanfrancisco, borregasave
 
-lanes_map_file = "{}_lanes.pkl".format(map)
+lanes_map_file = "./map/{}_lanes.pkl".format(map)
 lanes_map = None
 
 with open(lanes_map_file, "rb") as file:
@@ -133,7 +134,7 @@ with open(lanes_map_file, "rb") as file:
 
 file.close()
     
-signals_map_file = "{}_signals.pkl".format(map)
+signals_map_file = "./map/{}_signals.pkl".format(map)
 signals_map = None
 
 with open(signals_map_file, "rb") as file:
@@ -152,9 +153,7 @@ brake_count = 0
 
 time_stamp = str(int(time.time()))
 
-violation_weight_file = './violation_weight/{}_violation_weight'.format(map)
-
-violation_weight = [1/7, 1/7, 1/7, 1/7, 1/7, 1/7, 1/7]
+violation_weight = [1/6, 1/6, 1/6, 1/6, 1/6, 1/6]
 
 violation_segment = []
 
@@ -251,39 +250,28 @@ def update_violation_weight(violation_list):
     
     global violation_weight
     global VIOLATION_WEIGHT_DECAY
-    global update_counter
-    global UPDATE_WEIGHT_FREQ
-    global violation_weight_file
-    
-    update_counter += 1
-    
+
     reduced_part = 0
     
-    reduced_info = [1, 1, 1, 1, 1, 1, 1]
+    reduced_info = [1, 1, 1, 1, 1, 1]
     
-    rest = 7
+    rest = 6
     
-    for i in range(0, 7):
+    for i in range(0, 6):
         if violation_list[i] == float(1):
             reduced_info[i] = -1
             rest -= 1
             reduced_part += violation_weight[i] * VIOLATION_WEIGHT_DECAY
             violation_weight[i] = violation_weight[i] * (1 - VIOLATION_WEIGHT_DECAY)
             
-    for i in range(0, 7):
+    for i in range(0, 6):
         if reduced_info[i] == 1:
             violation_weight[i] += reduced_part / rest
 
-    # if update_counter % UPDATE_WEIGHT_FREQ == 0:
-        
-    #     print("UPDATE VIOLATION WEIGHT", violation_weight)
-        
-        
-
 # calculate measures thread, use in multi-thread
-def calculate_measures_thread(state_list, ego_state, isNpcVehicle, TTC_list, vioRate_list, agent_uid, frame_list, distance_list, probability_list, 
-                              current_signals, ego_curr_acc, prev_brake_percentage, brake_percentage, road, next_road, p_lane_id, 
-                              prev_tlight_sign_, orientation, mid_point=None, collision_tag_=False):
+def calculate_measures_thread(state_list, ego_state, isNpcVehicle, TTC_list, vioRate_list, agent_uid, frame_list, sub_frame_list,
+                              distance_list, probability_list, current_signals, ego_curr_acc, prev_brake_percentage, brake_percentage, 
+                              road, next_road, p_lane_id, prev_tlight_sign_, orientation, mid_point=None, collision_tag_=False):
 
     p_tlight_sign = prev_tlight_sign_
     
@@ -302,7 +290,6 @@ def calculate_measures_thread(state_list, ego_state, isNpcVehicle, TTC_list, vio
     distance_list.append(round(distance, 6))
     if collision_tag_:
         probability2 = 1
-        vioRate[6] = 1
         for i in range(0, 5):
             if vioRate[i] > 0:
                 vioRate[i] = 1.0
@@ -310,12 +297,20 @@ def calculate_measures_thread(state_list, ego_state, isNpcVehicle, TTC_list, vio
     
     vioRate_list.append(vioRate)
     
-    # for i in range(len(frame_list) - 4, len(frame_list)):
-    #     for j in range(0, 7):
-    #         if vioRate[j] == 1.0:
-    #             frame_list[i].append(1)
-    #         else:
-    #             frame_list[i].append(0)
+    if isCalculateDiversity:
+        for i in range(0, len(sub_frame_list)):
+            for j in range(0, 6):
+                if vioRate[j] == 1.0:
+                    sub_frame_list[i].append(1)
+                else:
+                    sub_frame_list[i].append(0)
+                    
+            if probability2 == 1:
+                sub_frame_list[i].append(1)
+            else:
+                sub_frame_list[i].append(0)
+                    
+        frame_list += sub_frame_list
 
 def cal_dis_position(ego, agent):
     return math.sqrt((ego.x - agent.x) ** 2 + (ego.y - agent.y) ** 2 + (ego.z - agent.z) ** 2)        
@@ -488,13 +483,15 @@ def calculate_metrics(agents, ego):
         
         num_of_frame = int(time_step / sliding_step)
         
+        sub_frame_list = []
+        
         # print("Number of frame", num_of_frame)
         
         for j in range(0, num_of_frame):
             sim.run(time_limit=sliding_step)
             if isCalculateDiversity:
                 frame = collecting_data(sim)
-                frame_list.append(frame) 
+                sub_frame_list.append(frame) 
         
         # sim.run(time_limit=time_step)  # , time_scale=2
         
@@ -543,7 +540,7 @@ def calculate_metrics(agents, ego):
         
         thread = threading.Thread(
             target=calculate_measures_thread,
-            args=(state_list, ego_state, isNpcVehicle, TTC_list, vioRate_list, agent_uid, frame_list, distance_list, 
+            args=(state_list, ego_state, isNpcVehicle, TTC_list, vioRate_list, agent_uid, frame_list, sub_frame_list, distance_list, 
                   probability_list, current_signals, ego_curr_acc, prev_brake_percentage, brake_percentage, 
                   road, next_road, p_lane_id, prev_tlight_sign, orientation, MID_POINT, collision_tag,)
         )
@@ -675,6 +672,9 @@ def load_scene():
     global DREAMVIEW
     global brake_count
     global brake_percentage_queue
+    global DREAMVIEW_PORT
+    global BRIDGE_PORT
+    
     prev_lane_id = ""
     prev_tlight_sign = {}
     brake_count = 0
@@ -729,13 +729,13 @@ def load_scene():
 
     forward = lgsvl.utils.transform_to_forward(state.transform)
 
-    state.velocity = 3 * forward
+    state.velocity = 3.2 * forward
 
     EGO = sim.add_agent("8e776f67-63d6-4fa3-8587-ad00a0b41034",
                         lgsvl.AgentType.EGO, state)
-    EGO.connect_bridge(os.environ.get("BRIDGE_HOST", APOLLO_HOST), 9090)
+    EGO.connect_bridge(os.environ.get("BRIDGE_HOST", APOLLO_HOST), BRIDGE_PORT)
     
-    DREAMVIEW = lgsvl.dreamview.Connection(sim, EGO, APOLLO_HOST, '9988')
+    DREAMVIEW = lgsvl.dreamview.Connection(sim, EGO, APOLLO_HOST, str(DREAMVIEW_PORT))
 
     sensors = EGO.get_sensors()
     sim.get_agents()[0].on_collision(on_collision)
@@ -812,7 +812,7 @@ def reset_env():
     sim.reset()
     ego = sim.add_agent("8e776f67-63d6-4fa3-8587-ad00a0b41034",
                         lgsvl.AgentType.EGO, state)
-    ego.connect_bridge(os.environ.get("BRIDGE_HOST", APOLLO_HOST), 9090)
+    ego.connect_bridge(os.environ.get("BRIDGE_HOST", APOLLO_HOST), BRIDGE_PORT)
     global sensors
     sensors = ego.get_sensors()
     sim.get_agents()[0].on_collision(on_collision)
@@ -893,24 +893,57 @@ def save_state():
 
 @app.route('/LGSVL/SaveViolationWeight', methods=['POST'])
 def save_violation_weight():
-    global violation_weight_file
     global violation_weight
+    global map
+    
+    eps = str(request.args.get('eps'))
+    
+    violation_weight_file = './violation_weight/{}_violation_weight_{}.pkl'.format(map, eps)
     
     with open(violation_weight_file, 'wb') as file:
         pickle.dump(violation_weight, file)
         
+    return 'Save successfully'
+        
 
 @app.route('/LGSVL/LoadViolationWeight', methods=['POST'])
 def load_violation_weight():
-    global violation_weight_file
     global violation_weight
+    global map
+    
+    eps = str(request.args.get('eps'))
+    
+    violation_weight_file = './violation_weight/{}_violation_weight_{}.pkl'.format(map, eps)
 
     if os.path.exists(violation_weight_file):
         with open(violation_weight_file, "rb") as file:
             violation_weight = pickle.load(file)
             
         file.close()
+        
+    return 'Load successfully'
     
+@app.route('/LGSVL/SetMode', methods=['POST'])
+def set_mode():
+    global isCalculateDiversity
+    global flexible_weight
+    
+    mode = str(request.args.get('mode'))
+    
+    if mode == 'flexible':
+        flexible_weight = True
+        isCalculateDiversity = False
+    elif mode == 'diversity':
+        isCalculateDiversity = True
+        flexible_weight = False
+    elif mode == 'basic':
+        flexible_weight = False
+        isCalculateDiversity = False
+    else:
+        flexible_weight = True
+        isCalculateDiversity = True
+        
+    return 'Set mode successfully'
 
 
 @app.route('/LGSVL/SetDestination', methods=['POST'])
@@ -922,7 +955,6 @@ def set_destination():
     y = float(request.args.get('des_y'))
     z = float(request.args.get('des_z'))
     print("x y z: ", x, y, z)
-    # DREAMVIEW = lgsvl.dreamview.Connection(sim, EGO, APOLLO_HOST, '9988')
     DREAMVIEW.set_destination(x, z, y, coord_type=CoordType.Unity)
     return 'set destination.'
 
@@ -1446,7 +1478,6 @@ def check_modules_status():
     global DREAMVIEW
     
     # print("Create connection")
-    # DREAMVIEW = lgsvl.dreamview.Connection(sim, EGO, ip=APOLLO_HOST, port='9988')
     # print("Create connection successfully")
     
     

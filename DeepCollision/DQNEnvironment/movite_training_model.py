@@ -15,31 +15,38 @@ from memory.buffer import ReplayBuffer, PrioritizedReplayBuffer
 from utils import *
 
 current_eps = ''
+start_eps = '0'
+end_eps = '200'
+
+mode = 'basic' # basic, flexible, diversity, full
+
+requests.post("http://localhost:8933/LGSVL/SetMode?mode=" + mode)
+
 
 road_num = '1'  # the Road Number
 second = '6'  # the experiment second
 requests.post("http://localhost:8933/LGSVL/LoadScene?scene=bd77ac3b-fbc3-41c3-a806-25915c777022&road_num=" + road_num)
 file_name = str(int(time.time()))
 
-per_confi = None
-pred_confi = None
-
 collide_with_obstacle = False
 position_pre_obstacle_collision = None
 previous_weather_and_time_step = -5
-# current_step = 0
 
 goal = [341.1, 35.5, 289.4]
 
 prev_position = None
 is_stopped = False
 
-w_vio_prob = 0.6
-w_div_level = 0.4
+if mode == 'diversity':
+    w_col_prob = 0.5
+    w_vio_prob = 0.3
+    w_div_level = 0.2
+else:
+    w_col_prob = 0.6
+    w_vio_prob = 0.4
+    w_div_level = 0.0
 
 def get_environment_state():
-    global per_confi
-    global pred_confi
     
     r = requests.get("http://localhost:8933/LGSVL/Status/Environment/State")
     a = r.json()
@@ -98,8 +105,7 @@ def get_environment_state():
     state[39] = a['steering_rate']
     state[40] = a['steering_target']
     state[41] = a['acceleration']
-    state[42] = a['gear']
-    
+    state[42] = a['gear'] 
 
     return state
 
@@ -112,7 +118,7 @@ ENV_A_SHAPE = 0
 print("Number of action: ", N_ACTIONS)
 print("Number of state: ", N_STATES)
 
-HyperParameter = dict(BATCH_SIZE=32, GAMMA=0.9, EPS_START=1, EPS_END=0.1, EPS_DECAY=3000, TARGET_UPDATE=100,
+HyperParameter = dict(BATCH_SIZE=32, GAMMA=0.9, EPS_START=1, EPS_END=0.1, EPS_DECAY=4000, TARGET_UPDATE=100,
                       lr=3*1e-3, INITIAL_MEMORY=1000, MEMORY_SIZE=1000, SCHEDULER_UPDATE=100, WEIGHT_DECAY=1e-5,
                       LEARNING_RATE_DECAY=0.8)
 
@@ -133,8 +139,6 @@ class Net(nn.Module):
         self.out.weight.data.normal_(0, 0.1)  # initialization
 
     def forward(self, x, is_training=True):
-        # x = self.fc1(x)
-        # print('x1', x)
         x = self.fc1(x)
         x = F.relu(x)
         if is_training:
@@ -143,7 +147,6 @@ class Net(nn.Module):
         x = F.relu(x)
         if is_training:
             x = self.bn2(x)
-        # print('x', x)
         actions_value = self.out(x)
         return actions_value
 
@@ -169,8 +172,6 @@ class DQN(object):
         eps_threshold = HyperParameter['EPS_END'] + (
                 HyperParameter['EPS_START'] - HyperParameter['EPS_END']) * math.exp(
             -1. * self.steps_done / HyperParameter['EPS_DECAY'])
-        
-        eps_threshold = 0.2
         
         print("eps threshold:", eps_threshold)
         
@@ -291,7 +292,7 @@ def execute_action(action_id):
         obstacle_uid = response.json()['collision_uid']
     except Exception as e:
         print(e)
-        vioRate_list = [-1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -1.0]
+        vioRate_list = [-1.0, -1.0, -1.0, -1.0, -1.0, -1.0]
         
     return vioRate_list, obstacle_uid
 
@@ -346,33 +347,46 @@ def calculate_reward(action_id):
     
     global w_div_level
     global w_vio_prob
+    global w_col_prob
     
     vioRate_list, obstacle_uid = execute_action(action_id)
     observation = get_environment_state()
     action_reward = 0
     violation_rate = 0
+    violation_reward = 0
     diversity_level = 0
+    collision_probability = 0
+    collision_reward = 0
     episode_done = judge_done()
+    
+    collision_probability = round(float(
+        (requests.get("http://localhost:8933/LGSVL/Status/CollisionProbability")).content.decode(
+            encoding='utf-8')), 6)
+    
+    if collision_probability < 0.2:
+        collision_reward = -1
+    else:
+        collision_reward = collision_probability
     
     violation_rate = round(float(
         (requests.get("http://localhost:8933/LGSVL/Status/ViolationRate")).content.decode(
             encoding='utf-8')), 6)
     
+    if violation_rate < 0.2:
+        violation_reward = -1
+    else:
+        violation_reward = violation_rate
+    
     diversity_level = round(float(
         (requests.get("http://localhost:8933/LGSVL/Status/DiversityLevel")).content.decode(
             encoding='utf-8')), 6)
-
-    if violation_rate < 0.2:
-        action_reward = -1
-    else:
-        action_reward = violation_rate
         
-    action_reward = w_vio_prob * action_reward + w_div_level * diversity_level
+    action_reward = w_col_prob * collision_reward + w_vio_prob * violation_reward + w_div_level * diversity_level
             
-    return observation, action_reward, violation_rate, episode_done, vioRate_list, obstacle_uid
+    return observation, action_reward, violation_rate, episode_done, vioRate_list, collision_probability, obstacle_uid
 
 
-title = ["Episode", "Step", "State", "Action", "Reward", "ViolationRate", "ViolationRate_List", "Action_Description", "Done"]
+title = ["Episode", "Step", "State", "Action", "Reward", "ViolationRate", "ViolationRate_List", "Collision Probability", "Action_Description", "Done"]
 df_title = pd.DataFrame([title])
 
 df_title.to_csv('../ExperimentData/movite_tartu_' + second + 's_' + file_name + '_road' + road_num + '.csv', mode='w',
@@ -390,20 +404,26 @@ if __name__ == '__main__':
     # if int(road_num) >= 2:
     #     dqn.eval_net.load_state_dict(torch.load('./model/InnerCollision_new_action_space_2000MS_'+second+'s/eval_net_600_road'+str(int(road_num)-1)+'.pt'))
         
+    folder_name = './model/movite_tartu_diversity_level/'
+    
+    if not os.path.isdir(folder_name):
+        print("Create dir", folder_name)
+        os.makedirs(folder_name)
         
     if current_eps != '':
         print("Continue at episode: " + current_eps)
         
-        with open('./model/movite_tartu_min_dis_1_5_fix/rl_network_' + current_eps + '_road' + road_num + '.pkl', "rb") as file:
+        with open(folder_name + 'rl_network_' + current_eps + '_road' + road_num + '.pkl', "rb") as file:
             dqn = pickle.load(file)
         # print(dqn.buffer_memory.real_size, dqn.memory_counter, dqn.steps_done, dqn.learn_step_counter)
-        dqn.eval_net.load_state_dict(torch.load('./model/movite_tartu_min_dis_1_5_fix/eval_net_' + current_eps + '_road' + road_num + '.pt'))
-        dqn.target_net.load_state_dict(torch.load('./model/movite_tartu_min_dis_1_5_fix/target_net_' + current_eps + '_road' + road_num + '.pt'))
+        dqn.eval_net.load_state_dict(torch.load(folder_name + 'eval_net_' + current_eps + '_road' + road_num + '.pt'))
+        dqn.target_net.load_state_dict(torch.load(folder_name + 'target_net_' + current_eps + '_road' + road_num + '.pt'))
         # restore memory buffer
-        with open('./model/movite_tartu_min_dis_1_5_fix/memory_buffer_' + current_eps + '_road' + road_num + '.pkl', "rb") as file:
+        with open(folder_name + 'memory_buffer_' + current_eps + '_road' + road_num + '.pkl', "rb") as file:
             dqn.buffer_memory = pickle.load(file)
             
-        # requests.post("http://localhost:8933/LGSVL/LoadViolationWeight")
+        if mode == 'flexible':
+            requests.post("http://localhost:8933/LGSVL/LoadViolationWeight?eps=" + str(current_eps))
             
         print(dqn.buffer_memory.real_size, dqn.learn_step_counter, dqn.steps_done)
         
@@ -418,34 +438,20 @@ if __name__ == '__main__':
 
         df_title = pd.DataFrame([title])
         file_name = str(int(time.time()))
-        # pd.DataFrame([["Learning Step", "Learning Rate", "Loss"]]).to_csv('./loss_log/loss_log_' + file_name + '.csv', 
-        #                                                  mode='w', header=False, index=None)
-        # df_title.to_csv('../ExperimentData/InnerCollision_experiment_' + second + 's_' + file_name + '_road' + road_num + '.csv',
-        #                 mode='w', header=False,
-        #                 index=None)
-        # title2 = ["per_confi", "pred_confi", "reward"]
-        # pd.DataFrame([title2]).to_csv("./log/per_pred_reward_" + file_name + ".csv", mode='w', header=False, index=None)
-
+        
+        df_title.to_csv('../ExperimentData/movite_tartu_' + second + 's_' + file_name + '_road' + road_num + '.csv', mode='w',
+                header=False,
+                index=None)
 
         requests.post("http://localhost:8933/LGSVL/SetObTime?observation_time=" + '6')
-        #isRouted = False
     
-        for i_episode in range(0, 100):
+        for i_episode in range(int(start_eps), int(end_eps)):
             print('------------------------------------------------------')
             print('+                 Road, Episode: ', road_num_int, i_episode, '                +')
             print('------------------------------------------------------')
-            # if i_episode == 1:
-            #    requests.post("http://localhost:8933/LGSVL/SaveTransform")
             requests.post("http://localhost:8933/LGSVL/LoadScene?scene=bd77ac3b-fbc3-41c3-a806-25915c777022&road_num=" + road_num)
 
-            # comm_apollo.send(str(1).encode())
-            # if i_episode % 9 == 0:
-            #     requests.post("http://localhost:8933/LGSVL/LoadScene?scene=SanFrancisco")
-            # else:
-            #     requests.post("http://localhost:8933/LGSVL/EGOVehicle/Reset")
-            #     requests.post("http://localhost:8933/LGSVL/Reset")
             s = get_environment_state()
-            # s = format_state(get_environment_state())
             ep_r = 0
             step = 0
             while True:
@@ -457,7 +463,7 @@ if __name__ == '__main__':
                     
                 action_description = scenario_space[str(action)]
                 # take action
-                s_, reward, vioRate, done, vioRate_list, obstacle_uid = calculate_reward(action)
+                s_, reward, vioRate, done, vioRate_list, proC, obstacle_uid = calculate_reward(action)
                 
                 print("Reward: ", reward)
                 
@@ -521,19 +527,15 @@ if __name__ == '__main__':
                 }
                 
                 # print(s, action, reward, s_, done)
-                print('>>>>>step, action, reward, collision_probability, action_description, done: ', step, action,
-                      reward, round(vioRate, 6),
+                print('>>>>>step, action, reward, violation_rate, collision_probability, action_description, done: ', step, action,
+                      reward, round(vioRate, 6), round(proC, 6),
                       "<" + action_description + ">",
                       done)
                 pd.DataFrame(
-                    [[i_episode, step, s, action, reward, vioRate, vioRate_list, action_description, done]]).to_csv(
+                    [[i_episode, step, s, action, reward, vioRate, vioRate_list, proC, action_description, done]]).to_csv(
                     '../ExperimentData/movite_tartu_' + second + 's_' + file_name + '_road' + road_num + '.csv',
                     mode='a',
                     header=False, index=None)
-                
-                # pd.DataFrame([[per_confi, pred_confi, reward]]).to_csv(
-                #     './log/per_pred_reward_' + file_name + '.csv', mode='a', header=False, index=None
-                # )
 
                 ep_r += reward
                 if dqn.memory_counter > HyperParameter['MEMORY_SIZE']:
@@ -542,29 +544,29 @@ if __name__ == '__main__':
                         print('Ep: ', i_episode,
                               '| Ep_r: ', round(ep_r, 2))
 
-                if (i_episode + 1) % 10 == 0:
+                if (i_episode + 1) % 5 == 0:
                     # print('save')
                     # print(dqn.eval_net.state_dict())
                     # print(dqn.target_net.state_dict())
                     torch.save(dqn.eval_net.state_dict(),
-                               './model/movite_tartu_min_dis_1_5_fix/eval_net_' + str(
+                               folder_name + 'eval_net_' + str(
                                    i_episode + 1) + '_road' + road_num + '.pt')
                     torch.save(dqn.target_net.state_dict(),
-                               './model/movite_tartu_min_dis_1_5_fix/target_net_' + str(
+                               folder_name + 'target_net_' + str(
                                    i_episode + 1) + '_road' + road_num + '.pt')
                     
-                    with open('./model/movite_tartu_min_dis_1_5_fix/memory_buffer_' + str(
+                    with open(folder_name + 'memory_buffer_' + str(
                                    i_episode + 1) + '_road' + road_num + '.pkl', "wb") as file:
                         pickle.dump(dqn.buffer_memory, file)
                         
-                    with open('./model/movite_tartu_min_dis_1_5_fix/rl_network_' + str(
+                    with open(folder_name + 'rl_network_' + str(
                                    i_episode + 1) + '_road' + road_num + '.pkl', "wb") as file:
                         pickle.dump(dqn, file)
-                        
-                    # requests.post("http://localhost:8933/LGSVL/SaveViolationWeight")
+                    
+                    if mode == 'flexible':
+                        requests.post("http://localhost:8933/LGSVL/SaveViolationWeight?eps=" + str(i_episode + 1))
                     
                 if done:
-                    # comm_apollo.send(repr('1').encode())
                     collide_with_obstacle = False
                     position_pre_obstacle_collision = None
                     prev_position = None

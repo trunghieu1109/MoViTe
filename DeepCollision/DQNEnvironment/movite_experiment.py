@@ -8,6 +8,19 @@ import torch
 from movite_training_model import DQN
 import json
 
+mode = 'basic' # basic, flexible, diversity, full
+
+requests.post("http://localhost:8933/LGSVL/SetMode?mode=" + mode)
+
+if mode == 'diversity':
+    w_col_prob = 0.5
+    w_vio_prob = 0.3
+    w_div_level = 0.2
+else:
+    w_col_prob = 0.6
+    w_vio_prob = 0.4
+    w_div_level = 0.0
+
 # Execute action
 def execute_action(action_id):
     api = action_space[str(action_id)]
@@ -19,7 +32,7 @@ def execute_action(action_id):
         obstacle_uid = response.json()['collision_uid']
     except Exception as e:
         print(e)
-        vioRate_list = [-1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -1.0]
+        vioRate_list = [-1.0, -1.0, -1.0, -1.0, -1.0, -1.0]
         
     return vioRate_list, obstacle_uid
 
@@ -56,26 +69,54 @@ def judge_done():
 
 
 # Execute action and get return
-def calculate_reward(api_id):
+def calculate_reward(action_id):
     """
     Function for reward calculating.
     First, interpret action id to real RESTful API and call function -execute_action- to execute current RESTful API;
     then after the execution of RESTful API, the collision information are collected and based on it, we can calculate the reward.
-    :param api_id:
+    :param action_id:
     :return:
     """
-    vioRate_list, collision_uid = execute_action(api_id)
-    observation = None
+    
+    global w_div_level
+    global w_vio_prob
+    global w_col_prob
+    
+    vioRate_list, obstacle_uid = execute_action(action_id)
+    observation = get_environment_state()
     action_reward = 0
     violation_rate = 0
-    # Reward is calculated based on collision probability.
+    violation_reward = 0
+    diversity_level = 0
+    collision_probability = 0
+    collision_reward = 0
     episode_done = judge_done()
-
+    
+    collision_probability = round(float(
+        (requests.get("http://localhost:8933/LGSVL/Status/CollisionProbability")).content.decode(
+            encoding='utf-8')), 6)
+    
+    if collision_probability < 0.2:
+        collision_reward = -1
+    else:
+        collision_reward = collision_probability
+    
     violation_rate = round(float(
         (requests.get("http://localhost:8933/LGSVL/Status/ViolationRate")).content.decode(
             encoding='utf-8')), 6)
-
-    return observation, violation_rate, episode_done, vioRate_list, collision_uid
+    
+    if violation_rate < 0.2:
+        violation_reward = -1
+    else:
+        violation_reward = violation_rate
+    
+    diversity_level = round(float(
+        (requests.get("http://localhost:8933/LGSVL/Status/DiversityLevel")).content.decode(
+            encoding='utf-8')), 6)
+        
+    action_reward = w_col_prob * collision_reward + w_vio_prob * violation_reward + w_div_level * diversity_level
+            
+    return observation, action_reward, violation_rate, episode_done, vioRate_list, collision_probability, obstacle_uid
 
 
 def get_environment_state():
@@ -152,20 +193,27 @@ for hieu in range(0, 5):
 
     print("Number of actions: ", action_space_size)
 
-    current_eps = str(150)
+    current_eps = str(200)
     road_num = str(1)
 
     file_name = str(int(time.time()))
 
     dqn = DQN()
+    
+    model_path = './model/movite_tartu_diversity_level/'
+    log_path = '../ExperimentData/Random-or-Non-random Analysis/movite_tartu_diversity_level/'
+    
+    if not os.path.isdir(log_path):
+        print("Create dir", log_path)
+        os.makedirs(log_path)
 
-    dqn.eval_net.load_state_dict(torch.load('./model/movite_tartu_min_dis_2/eval_net_' + current_eps + '_road' + road_num + '.pt'))
-    dqn.target_net.load_state_dict(torch.load('./model/movite_tartu_min_dis_2/target_net_' + current_eps + '_road' + road_num + '.pt'))
+    dqn.eval_net.load_state_dict(torch.load(model_path + 'eval_net_' + current_eps + '_road' + road_num + '.pt'))
+    dqn.target_net.load_state_dict(torch.load(model_path + 'target_net_' + current_eps + '_road' + road_num + '.pt'))
 
     title = ["Episode", "State", "Action", "Choosing_Type", "Violation Rate", "Violation Rate List", "Collision_uid", "Done"]
     df_title = pd.DataFrame([title])
     
-    df_title.to_csv('../ExperimentData/Random-or-Non-random Analysis/movite_tartu_min_dis_2/dqn_6s_road1_' + current_eps + 'eps_' + file_name + '_0.2eps.csv', mode='w', header=False, index=None)
+    df_title.to_csv(log_path + 'dqn_6s_road1_' + current_eps + 'eps_' + file_name + '.csv', mode='w', header=False, index=None)
 
     iteration = 0
     step = 0
@@ -175,6 +223,7 @@ for hieu in range(0, 5):
     type_ = []
     vioRate_ = []
     vioArr_ = []
+    proC_ = []
     collision_uid_ = []
     done_ = []
     isCollision = False
@@ -193,7 +242,7 @@ for hieu in range(0, 5):
         
             try:
                 action, type = dqn.choose_action(s, current_step, previous_weather_and_time_step)
-                _, vioRate, done, vioRate_list, collision_uid, = calculate_reward(action)
+                _, vioRate, done, vioRate_list, proC, collision_uid, = calculate_reward(action)
             except json.JSONDecodeError as e:
                 print(e)    
                 retry = True 
@@ -201,11 +250,14 @@ for hieu in range(0, 5):
         if 0 <= action and action <= 12:
             previous_weather_and_time_step = step
 
-        print('api_id, vioRate, vioRate_list, done: ', action, vioRate, vioRate_list, done)
+        print('api_id, vioRate, vioRate_list, collision_probability, done: ', action, vioRate, vioRate_list, proC, done)
         
         for beh_vio in vioRate_list:
             if beh_vio == 1:
                 isCollision = True
+                
+        if float(proC) == 1.0:
+            isCollision = True
         
         state_.append(s)
         action_.append(action)
@@ -213,6 +265,7 @@ for hieu in range(0, 5):
         vioRate_.append(vioRate)
         collision_uid_.append(collision_uid)
         vioArr_.append(vioRate_list)
+        proC_.append(proC)
         done_.append(done)
 
         step += 1
@@ -226,16 +279,16 @@ for hieu in range(0, 5):
                 else:
                     print("Episode complete")
                     for iter in range(0, len(state_)):
-                        pd.DataFrame([[iteration, state_[iter], action_[iter], type_[iter], vioRate_[iter], vioArr_[iter], collision_uid_[iter], done_[iter]]]).to_csv(
-                            '../ExperimentData/Random-or-Non-random Analysis/movite_tartu_min_dis_2/dqn_6s_road1_' + current_eps + 'eps_' + file_name + '_0.2eps.csv',
+                        pd.DataFrame([[iteration, state_[iter], action_[iter], type_[iter], vioRate_[iter], vioArr_[iter], proC_[iter], collision_uid_[iter], done_[iter]]]).to_csv(
+                            log_path + 'dqn_6s_road1_' + current_eps + 'eps_' + file_name + '.csv',
                             mode='a',
                             header=False, index=None)
                     iteration += 1
             else:
                 print("Episode complete")
                 for iter in range(0, len(state_)):
-                    pd.DataFrame([[iteration, state_[iter], action_[iter], type_[iter], vioRate_[iter], vioArr_[iter], collision_uid_[iter], done_[iter]]]).to_csv(
-                        '../ExperimentData/Random-or-Non-random Analysis/movite_tartu_min_dis_2/dqn_6s_road1_' + current_eps + 'eps_' + file_name + '_0.2eps.csv',
+                    pd.DataFrame([[iteration, state_[iter], action_[iter], type_[iter], vioRate_[iter], vioArr_[iter], proC_[iter], collision_uid_[iter], done_[iter]]]).to_csv(
+                        log_path + 'dqn_6s_road1_' + current_eps + 'eps_' + file_name + '.csv',
                         mode='a',
                         header=False, index=None)
                 iteration += 1
@@ -246,6 +299,7 @@ for hieu in range(0, 5):
             vioRate_ = []
             collision_uid_ = []
             vioArr_ = []
+            proC_ = []
             done_ = []
             current_step = 0
             previous_weather_and_time_step = -5

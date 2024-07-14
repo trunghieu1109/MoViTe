@@ -13,12 +13,12 @@ def cluster_df(df: pd.DataFrame):
     data = df.iloc[:, 1:]  # remove the first column
     # print(data.shape)
     
-    k_neighbor = 20
+    k_neighbor = 10
     data_scaled = MinMaxScaler().fit_transform(data)
     knn = NearestNeighbors(n_neighbors=k_neighbor)
     neighbors = knn.fit(data_scaled)
     distances, _ = neighbors.kneighbors(data_scaled)
-    sorted_distances = np.sort(distances, axis=0)[:, 1]
+    sorted_distances = np.sort(distances, axis=0)[:, -1]
 
     i = np.arange(len(sorted_distances))
     knee = KneeLocator(
@@ -36,7 +36,7 @@ def cluster_df(df: pd.DataFrame):
         
     output_file = './epsilon_log.csv'
     
-    if not os.path.exists(violation_weight_file):
+    if not os.path.exists(output_file):
         pd.DataFrame([['epsilon']]).to_csv(
             output_file,
             mode='w',

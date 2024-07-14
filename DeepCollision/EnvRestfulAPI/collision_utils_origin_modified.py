@@ -533,7 +533,7 @@ def calculate_measures(state_list, ego_state, isNpcVehicle, current_signals, ego
             violation_rate_ = vioRate_dt
         np_condition.append(condition[i] * violation_rate_)
     
-    np_condition.append(proC_dt)
+    # np_condition.append(proC_dt)
     
     if condition[5] == 1.0:
         np_condition[5] = 1.0
