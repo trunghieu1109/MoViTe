@@ -146,7 +146,7 @@ file.close()
     
 signals_params = {}
 
-vioRate = 0
+vioRate_reward = 0
 
 prev_tlight_sign = {}
 prev_lane_id = ""
@@ -441,7 +441,7 @@ def calculate_metrics(agents, ego):
     global collision_uid
     global lane_waypoint
     global next_lane_waypoint
-    global vioRate
+    global vioRate_reward
     global prev_tlight_sign
     global prev_lane_id
     global violation_weight
@@ -579,17 +579,22 @@ def calculate_metrics(agents, ego):
     for i in range (0, len(max_values)):
         if max_values[i] > 0:
             cnt_vio += 1
+            addition = 0
+            
+            if float(max_values[i]) == 1.0:
+                addition = 1.0
+            
             if flexible_weight:
-                total_rate += max_values[i] * violation_weight[i]
+                total_rate += (max_values[i] + addition) * violation_weight[i]
             else:
-                total_rate += max_values[i]
+                total_rate += (max_values[i] + addition)
             if float(max_values[i]) == 1.0:
                 isViolation = True
     
     if cnt_vio == 0:
         cnt_vio = 1
     
-    vioRate = total_rate / cnt_vio
+    vioRate_reward = total_rate / cnt_vio
     
     # print("Merged Frame List: ")
     
@@ -2068,11 +2073,11 @@ def get_diversity_level():
     return str(d_level)
 
 
-@app.route('/LGSVL/Status/ViolationRate', methods=['GET'])
+@app.route('/LGSVL/Status/ViolationRateReward', methods=['GET'])
 def get_violation_rate():
-    global vioRate
-    c_vioRate = vioRate
-    vioRate = 0
+    global vioRate_reward
+    c_vioRate = vioRate_reward
+    vioRate_reward = 0
     return str(c_vioRate)
 
 
