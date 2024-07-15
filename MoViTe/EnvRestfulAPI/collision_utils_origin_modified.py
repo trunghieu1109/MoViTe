@@ -220,8 +220,8 @@ def judge_condition(state_list, ego_state, prev_brake_percentage, brake_percenta
         a_velocity = np.array([state.velocity.x, state.velocity.y, state.velocity.z])
         trajectory_agent_k, trajectory_agent_b = get_line(a_position, a_velocity)
         agent_speed = state.speed
-        ego_diff = ego_velocity - ego_position
-        agent_diff = a_velocity - a_position
+        ego_diff = ego_velocity
+        agent_diff = a_velocity
         if (abs(trajectory_ego_k - trajectory_agent_k) < 0.01) and np.dot(ego_diff, agent_diff) > 0  and  (ego_speed > agent_speed) and (ego_acc > 0):
             condition[0] = 1
     
@@ -447,9 +447,7 @@ def calculate_measures(state_list, ego_state, isNpcVehicle, current_signals, ego
                 abs(pow(ego_velocity[0], 2) / ego_acc[0] + pow(a_velocity[0], 2) / agent_acc[0]))
             
             if ego_velocity[0] * (ego_position[0] - a_position[0]) > 0:
-                loSD = 0
-                
-        
+                loSD = 0    
         
         loProC = calculate_collision_probability(loSD, abs(ego_position[0] - a_position[0]))
         loVioRate = calculate_violation_rate(loSD, abs(ego_position[0] - a_position[0]))

@@ -114,7 +114,7 @@ u = 0.6
 z_axis = lgsvl.Vector(0, 0, 100)
 prefix = '/deepqtest/lgsvl-api/'
 
-# setup connect to apollo (change to fit specific computer)
+# setup connect to apollo
 
 APOLLO_HOST = '112.137.129.158'  # or 'localhost'
 PORT = 8966
@@ -581,7 +581,7 @@ def calculate_metrics(agents, ego):
     for i in range (0, len(max_values)):
         if max_values[i] > 0:
             cnt_vio += 1
-            addition = 0
+            addition = 0.0
             
             if float(max_values[i]) == 1.0:
                 addition = 1.0
@@ -2063,10 +2063,6 @@ def get_c_probability():
     global probability
     c_probability = probability
     probability = 0
-    
-    if float(c_probability) == 1.0:
-        c_probability *= 2
-    
     return str(c_probability)
 
 @app.route('/LGSVL/Status/DiversityLevel', methods=['GET'])
@@ -2077,7 +2073,7 @@ def get_diversity_level():
     return str(d_level)
 
 
-@app.route('/LGSVL/Status/ViolationRate', methods=['GET'])
+@app.route('/LGSVL/Status/ViolationRateReward', methods=['GET'])
 def get_violation_rate():
     global vioRate_reward
     c_vioRate = vioRate_reward
