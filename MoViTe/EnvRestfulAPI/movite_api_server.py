@@ -2063,6 +2063,10 @@ def get_c_probability():
     global probability
     c_probability = probability
     probability = 0
+    
+    if float(c_probability) == 1.0:
+        c_probability *= 2
+    
     return str(c_probability)
 
 @app.route('/LGSVL/Status/DiversityLevel', methods=['GET'])
@@ -2073,7 +2077,7 @@ def get_diversity_level():
     return str(d_level)
 
 
-@app.route('/LGSVL/Status/ViolationRateReward', methods=['GET'])
+@app.route('/LGSVL/Status/ViolationRate', methods=['GET'])
 def get_violation_rate():
     global vioRate_reward
     c_vioRate = vioRate_reward
