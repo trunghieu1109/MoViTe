@@ -114,10 +114,12 @@ u = 0.6
 z_axis = lgsvl.Vector(0, 0, 100)
 prefix = '/deepqtest/lgsvl-api/'
 
-# setup connect to apollo
+# setup connect to apollo (change to fit specific computer)
 
 APOLLO_HOST = '112.137.129.158'  # or 'localhost'
 PORT = 8966
+DREAMVIEW_PORT = 9988
+BRIDGE_PORT = 9090
 
 msg_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 server_address = (APOLLO_HOST, PORT)
@@ -738,9 +740,9 @@ def load_scene():
 
     EGO = sim.add_agent("8e776f67-63d6-4fa3-8587-ad00a0b41034",
                         lgsvl.AgentType.EGO, state)
-    EGO.connect_bridge(os.environ.get("BRIDGE_HOST", APOLLO_HOST), 9090)
+    EGO.connect_bridge(os.environ.get("BRIDGE_HOST", APOLLO_HOST), BRIDGE_PORT)
     
-    DREAMVIEW = lgsvl.dreamview.Connection(sim, EGO, APOLLO_HOST, '9988')
+    DREAMVIEW = lgsvl.dreamview.Connection(sim, EGO, APOLLO_HOST, str(DREAMVIEW_PORT))
 
     sensors = EGO.get_sensors()
     sim.get_agents()[0].on_collision(on_collision)
@@ -817,7 +819,7 @@ def reset_env():
     sim.reset()
     ego = sim.add_agent("8e776f67-63d6-4fa3-8587-ad00a0b41034",
                         lgsvl.AgentType.EGO, state)
-    ego.connect_bridge(os.environ.get("BRIDGE_HOST", APOLLO_HOST), 9090)
+    ego.connect_bridge(os.environ.get("BRIDGE_HOST", APOLLO_HOST), BRIDGE_PORT)
     global sensors
     sensors = ego.get_sensors()
     sim.get_agents()[0].on_collision(on_collision)
@@ -989,7 +991,6 @@ def set_destination():
     y = float(request.args.get('des_y'))
     z = float(request.args.get('des_z'))
     print("x y z: ", x, y, z)
-    # DREAMVIEW = lgsvl.dreamview.Connection(sim, EGO, APOLLO_HOST, '9988')
     DREAMVIEW.set_destination(x, z, y, coord_type=CoordType.Unity)
     return 'set destination.'
 
@@ -1513,7 +1514,6 @@ def check_modules_status():
     global DREAMVIEW
     
     # print("Create connection")
-    # DREAMVIEW = lgsvl.dreamview.Connection(sim, EGO, ip=APOLLO_HOST, port='9988')
     # print("Create connection successfully")
     
     
