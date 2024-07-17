@@ -32,7 +32,7 @@ def execute_action(action_id):
         obstacle_uid = response.json()['collision_uid']
     except Exception as e:
         print(e)
-        vioRate_list = [-1.0, -1.0, -1.0, -1.0, -1.0, -1.0]
+        vioRate_list = [-1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -1.0]
         
     return vioRate_list, obstacle_uid
 
@@ -101,14 +101,30 @@ def calculate_reward(action_id):
     else:
         collision_reward = collision_probability
     
-    violation_rate = round(float(
-        (requests.get("http://localhost:8933/LGSVL/Status/ViolationRate")).content.decode(
+    violation_rate_reward = round(float(
+        (requests.get("http://localhost:8933/LGSVL/Status/ViolationRateReward")).content.decode(
             encoding='utf-8')), 6)
     
-    if violation_rate < 0.2:
+    if violation_rate_reward < 0.2:
         violation_reward = -1
     else:
-        violation_reward = violation_rate
+        violation_reward = violation_rate_reward
+        
+    isViolation = False
+    
+    for i in range(0, 7):
+        if float(vioRate_list[i]) == 1.0:
+            isViolation = True
+    
+    isCollision = False
+    if float(collision_probability) == 1.0:
+        isCollision = True
+    
+    addition_collision_reward = 0.0
+    if isViolation and isCollision:
+        addition_collision_reward = 1.0
+        
+    collision_reward += addition_collision_reward
     
     diversity_level = round(float(
         (requests.get("http://localhost:8933/LGSVL/Status/DiversityLevel")).content.decode(
@@ -200,8 +216,8 @@ for hieu in range(0, 5):
 
     dqn = DQN()
     
-    model_path = './model/movite_tartu_diversity_level/'
-    log_path = '../ExperimentData/Random-or-Non-random Analysis/movite_tartu_diversity_level/'
+    model_path = './model/movite_tartu_basic_2_1/'
+    log_path = '../ExperimentData/Random-or-Non-random Analysis/movite_tartu_basic_2_1/'
     
     if not os.path.isdir(log_path):
         print("Create dir", log_path)

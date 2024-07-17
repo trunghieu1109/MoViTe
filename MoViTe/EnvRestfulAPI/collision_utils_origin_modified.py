@@ -36,6 +36,13 @@ npc_vehicle = {
     "BoxTruck"
 }
 
+# threshold
+theta_brake = 40 # brake percentage deviation in 2s
+theta_speed = 30 # speed level considered as speeding
+theta_lane_change = math.pi/6 # angle of ego and current lane direction when lane changing
+theta_turn = math.pi/4 # angle of ego and current lane direction when turnings
+theta_lane_direction = math.pi/18 # angle of current and next lane
+
 
 #
 # for v in pedestrian:
@@ -183,7 +190,30 @@ def judge_same_line(a1_position, a1_speed, a1_velocity, a2_position, a2_speed, k
 
     return judge, ego_ahead, TTC
 
-def judge_condition(state_list, ego_state, prev_brake_percentage, brake_percentage, ego_acc, road, next_road, p_lane_id, current_signals, p_tlight_sign, orientation):
+def judge_intersect_behind(a1_position, a1_velocity, a2_position, a2_velocity):
+    judge = False
+    k1, b1 = get_line(a1_position, a1_velocity)
+    k2, b2 = get_line(a2_position, a2_velocity)
+    if (k1 != k2):
+        inter_point = ((b2-b1)/(k1-k2), (b2-b1)/(k1-k2) * k1 + b1)
+        a1_pos_predict = a1_position + a1_velocity
+        a2_pos_predict = a2_position + a2_velocity
+        if ((a1_position[0] >= inter_point[0] and a1_position[0] <= a1_pos_predict[0]) or
+            (a1_position[0] <= inter_point[0] and a1_position[0] >= a1_pos_predict[0]) or
+            (a2_position[0] >= inter_point[0] and a2_position[0] <= a2_pos_predict[0]) or
+            (a2_position[0] <= inter_point[0] and a2_position[0] >= a2_pos_predict[0])):
+            judge = True
+    return judge
+
+def judge_condition(state_list, ego_state, prev_brake_percentage, brake_percentage, ego_acc, 
+                    road, next_road, p_lane_id, current_signals, p_tlight_sign, orientation):
+    
+    global theta_brake
+    global theta_speed
+    global theta_lane_change
+    global theta_turn
+    global theta_lane_direction
+    
     ego_transform = ego_state.transform
     ego_position = np.array([ego_transform.position.x, ego_transform.position.y, ego_transform.position.z])
 
@@ -201,41 +231,55 @@ def judge_condition(state_list, ego_state, prev_brake_percentage, brake_percenta
     ego_speed =  ego_state.speed
     
     trajectory_ego_k, trajectory_ego_b = get_line(ego_position, ego_velocity)
-    #Passing 0, Lane Changing 1, Turning 2, Braking 3, Speeding 4, Cruising 5 
-    condition = [0, 0, 0, 0, 0, 0]
+    #Passing 0, Lane Changing 1, Turning 2, Braking 3, Speeding 4, Cruising 5 , Other 6
+    condition = [0, 0, 0, 0, 0, 0, 0]
     
-    #Check braking
-    if brake_percentage - prev_brake_percentage >= 40:
+    #Check braking (Verified)
+    if brake_percentage - prev_brake_percentage >= theta_brake:
         condition[3] = 1
         
-    #Check Speeding
-    if ego_speed*3.6 > 30 and ego_acc > 0: 
+    #Check Speeding (Verified)
+    if ego_speed*3.6 > theta_speed and ego_acc > 0: 
         condition[4] = 1
         
-    #Check Passing
+    #Check Passing (Verified)
     for i in range(0, len(state_list)):
         transform = state_list[i].transform
         state = state_list[i]
         a_position = np.array([transform.position.x, transform.position.y, transform.position.z])
         a_velocity = np.array([state.velocity.x, state.velocity.y, state.velocity.z])
+        if judge_intersect_behind(ego_position, ego_velocity, a_position, a_velocity):
+            continue
+        
+        if ego_velocity[0] * (ego_position[0] - a_position[0]) + ego_velocity[2] * (ego_position[2] - a_position[2]) > 0:
+            continue
+        
         trajectory_agent_k, trajectory_agent_b = get_line(a_position, a_velocity)
         agent_speed = state.speed
         ego_diff = ego_velocity
         agent_diff = a_velocity
-        if (abs(trajectory_ego_k - trajectory_agent_k) < 0.01) and np.dot(ego_diff, agent_diff) > 0  and  (ego_speed > agent_speed) and (ego_acc > 0):
+        if np.dot(ego_diff, agent_diff) > 0 and (ego_speed > agent_speed) and (ego_acc > 0):
             condition[0] = 1
     
-    #Check Turn & Lane change
+    #Check Turn & Lane change (Verified)
     angle_radians = math.atan2(road['z'], road['x']) - math.atan2(next_road['z'], next_road['x'])
     angle_radians_ego = math.atan2(road['z'], road['x']) - math.atan2(ego_velocity[2], ego_velocity[0])
-    if (abs(angle_radians) > math.pi/4): 
-        condition[2] = 1
-    elif (abs(angle_radians_ego) > math.pi/6 and road['lane_id'] != next_road['lane_id']):
-        condition[1] = 1
+    # if (abs(angle_radians) > theta_lane_direction): 
+    #     condition[2] = 1
+    # elif (abs(angle_radians_ego) > theta_lane_change and road['lane_id'] != next_road['lane_id']):
+    #     condition[1] = 1
+    
+    # Lane changing (Verified)
+    if abs(angle_radians_ego) > theta_lane_change:
+        if abs(angle_radians) < theta_lane_direction and road['lane_id'] != next_road['lane_id']:
+            condition[1] = 1
+    
+    # Turning (Verified)
+    if abs(angle_radians_ego) > theta_turn:
+        if abs(angle_radians) > theta_lane_direction:
+            condition[2] = 1
         
-    # print("Prev: ", p_tlight_sign) 
-        
-    #Check signal
+    #Check Run on red light (Verified)
 
     ego_position = front_position
     for signal in current_signals:
@@ -326,9 +370,6 @@ def calculate_TTC(agents, ego, dis_tag):
         if abs(time_ego - time_agent) < 1:
             TTC = min(TTC, (time_ego + time_agent) / 2)
 
-    
-    
-
     return TTC, distance
 
 @jit(nopython=True, fastmath=True)
@@ -400,6 +441,10 @@ def calculate_measures(state_list, ego_state, isNpcVehicle, current_signals, ego
         state = state_list[i]
         a_position = np.array([transform.position.x, transform.position.y, transform.position.z])
         a_velocity = np.array([state.velocity.x, state.velocity.y, state.velocity.z])
+        
+        if judge_intersect_behind(ego_position, ego_velocity, a_position, a_velocity):
+            continue
+        
         dis_vec = np.array([ego_position[0] - a_position[0], ego_position[1] - a_position[1], ego_position[2] - a_position[2]])
         
         agent_acc = None
@@ -513,14 +558,15 @@ def calculate_measures(state_list, ego_state, isNpcVehicle, current_signals, ego
     vioRate_dt = max(vioRate_list)
     frontVioRate_dt = max(frontVioRate_list)
     behindVioRate_dt = max(behindVioRate_list)
-    #Passing 0, Lane Changing 1, Turning 2, Braking 3, Speeding 4, Cruising 5 
+    
+    #Passing 0, Lane Changing 1, Turning 2, Braking 3, Speeding 4, Cruising 5, Other 6
     condition, curr_tlight_sign = judge_condition(state_list, ego_state, prev_brake_percentage, brake_percentage, ego_curr_acc, road, next_road, p_lane_id, current_signals, p_tlight_sign, orientation)
     
     total_rate = 0
     
     np_condition = []
     
-    for i in range(0, 6):
+    for i in range(0, 7):
         violation_rate_ = 0
         
         if i == 3:

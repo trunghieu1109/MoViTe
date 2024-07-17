@@ -157,7 +157,7 @@ brake_count = 0
 
 time_stamp = str(int(time.time()))
 
-violation_weight = [1/6, 1/6, 1/6, 1/6, 1/6, 1/6]
+violation_weight = [1/7, 1/7, 1/7, 1/7, 1/7, 1/7, 1/7]
 
 violation_segment = []
 
@@ -257,18 +257,18 @@ def update_violation_weight(violation_list):
 
     reduced_part = 0
     
-    reduced_info = [1, 1, 1, 1, 1, 1]
+    reduced_info = [1, 1, 1, 1, 1, 1, 1]
     
-    rest = 6
+    rest = 7
     
-    for i in range(0, 6):
+    for i in range(0, 7):
         if violation_list[i] == float(1):
             reduced_info[i] = -1
             rest -= 1
             reduced_part += violation_weight[i] * VIOLATION_WEIGHT_DECAY
             violation_weight[i] = violation_weight[i] * (1 - VIOLATION_WEIGHT_DECAY)
             
-    for i in range(0, 6):
+    for i in range(0, 7):
         if reduced_info[i] == 1:
             violation_weight[i] += reduced_part / rest
 
@@ -294,16 +294,22 @@ def calculate_measures_thread(state_list, ego_state, isNpcVehicle, TTC_list, vio
     distance_list.append(round(distance, 6))
     if collision_tag_:
         probability2 = 1
-        for i in range(0, 5):
+        
+        is_other = 1
+        
+        for i in range(0, 6):
             if vioRate[i] > 0:
                 vioRate[i] = 1.0
+                is_other = 0
+                
+        vioRate[6] = 1.0 * is_other
     probability_list.append(round(probability2, 6))
     
     vioRate_list.append(vioRate)
     
     if isCalculateDiversity:
         for i in range(0, len(sub_frame_list)):
-            for j in range(0, 6):
+            for j in range(0, 7):
                 if vioRate[j] == 1.0:
                     sub_frame_list[i].append(1)
                 else:

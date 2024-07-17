@@ -293,7 +293,7 @@ def execute_action(action_id):
         obstacle_uid = response.json()['collision_uid']
     except Exception as e:
         print(e)
-        vioRate_list = [-1.0, -1.0, -1.0, -1.0, -1.0, -1.0]
+        vioRate_list = [-1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -1.0]
         
     return vioRate_list, obstacle_uid
 
@@ -380,7 +380,7 @@ def calculate_reward(action_id):
         
     isViolation = False
     
-    for i in range(0, 6):
+    for i in range(0, 7):
         if float(vioRate_list[i]) == 1.0:
             isViolation = True
     
@@ -421,7 +421,7 @@ if __name__ == '__main__':
     # if int(road_num) >= 2:
     #     dqn.eval_net.load_state_dict(torch.load('./model/InnerCollision_new_action_space_2000MS_'+second+'s/eval_net_600_road'+str(int(road_num)-1)+'.pt'))
         
-    folder_name = './model/movite_tartu_diversity_level/'
+    folder_name = './model/movite_tartu_basic_3_0/'
     
     if not os.path.isdir(folder_name):
         print("Create dir", folder_name)
