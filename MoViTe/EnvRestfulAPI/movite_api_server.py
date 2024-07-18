@@ -956,6 +956,8 @@ def set_mode():
         flexible_weight = True
         isCalculateDiversity = True
         
+    print(10*'*', 'Set Mode:', mode, 10*'*')
+        
     return 'Set mode successfully'
 
 @app.route('/LGSVL/SaveMergedState', methods=['POST'])
