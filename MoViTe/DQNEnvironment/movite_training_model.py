@@ -24,9 +24,9 @@ mode = 'basic' # basic, flexible, diversity, full
 requests.post("http://localhost:8933/LGSVL/SetMode?mode=" + mode)
 
 
-road_num = '1'  # the Road Number
+road_num = '3'  # the Road Number
 second = '6'  # the experiment second
-requests.post("http://localhost:8933/LGSVL/LoadScene?scene=bd77ac3b-fbc3-41c3-a806-25915c777022&road_num=" + road_num)
+requests.post("http://localhost:8933/LGSVL/LoadScene?scene=12da60a7-2fc9-474d-a62a-5cc08cb97fe8&road_num=" + road_num)
 file_name = str(int(time.time()))
 
 collide_with_obstacle = False
@@ -397,7 +397,7 @@ def calculate_reward(action_id):
         
     action_reward = w_col_prob * collision_reward + w_vio_prob * violation_reward + w_div_level * diversity_level
             
-    return observation, action_reward, violation_rate, episode_done, vioRate_list, collision_probability, obstacle_uid
+    return observation, action_reward, violation_reward, episode_done, vioRate_list, collision_probability, obstacle_uid
 
 
 title = ["Episode", "Step", "State", "Action", "Reward", "ViolationRate", "ViolationRate_List", "Collision Probability", "Action_Description", "Done"]
@@ -418,7 +418,7 @@ if __name__ == '__main__':
     # if int(road_num) >= 2:
     #     dqn.eval_net.load_state_dict(torch.load('./model/InnerCollision_new_action_space_2000MS_'+second+'s/eval_net_600_road'+str(int(road_num)-1)+'.pt'))
         
-    folder_name = './model/movite_tartu_diversity_level/'
+    folder_name = './model/movite_tartu_basic_sanfrancisco_3/'
     
     if not os.path.isdir(folder_name):
         print("Create dir", folder_name)
@@ -450,7 +450,7 @@ if __name__ == '__main__':
     print('\nCollecting experience...')
     road_num_int = int(road_num)
 
-    while road_num_int <= 1:
+    while road_num_int <= 3:
         print("Road num: ", road_num_int)
         road_num = str(road_num_int)
 
@@ -467,7 +467,7 @@ if __name__ == '__main__':
             print('------------------------------------------------------')
             print('+                 Road, Episode: ', road_num_int, i_episode, '                +')
             print('------------------------------------------------------')
-            requests.post("http://localhost:8933/LGSVL/LoadScene?scene=bd77ac3b-fbc3-41c3-a806-25915c777022&road_num=" + road_num)
+            requests.post("http://localhost:8933/LGSVL/LoadScene?scene=12da60a7-2fc9-474d-a62a-5cc08cb97fe8&road_num=" + road_num)
 
             s = get_environment_state()
             ep_r = 0

@@ -10,7 +10,7 @@ import lgsvl
 import numpy as np
 import pickle
 # from ScenarioCollector.createUtils import *
-from collision_utils_old_sd import pedestrian, npc_vehicle, calculate_measures
+from collision_utils_origin_modified import pedestrian, npc_vehicle, calculate_measures
 from clustering import cluster
 import math
 import threading
@@ -128,7 +128,7 @@ msg_socket.connect(server_address)
 
 # import lane_information
 
-map = 'tartu' # map: tartu, sanfrancisco, borregasave
+map = 'sanfrancisco' # map: tartu, sanfrancisco, borregasave
 
 lanes_map_file = "./map/{}_lanes.pkl".format(map)
 lanes_map = None
