@@ -10,7 +10,7 @@ import lgsvl
 import numpy as np
 import pickle
 # from ScenarioCollector.createUtils import *
-from collision_utils_origin_modified import pedestrian, npc_vehicle, calculate_measures
+from collision_utils_old_sd import pedestrian, npc_vehicle, calculate_measures
 from clustering import cluster
 import math
 import threading

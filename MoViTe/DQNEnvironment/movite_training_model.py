@@ -364,16 +364,13 @@ def calculate_reward(action_id):
         (requests.get("http://localhost:8933/LGSVL/Status/CollisionProbability")).content.decode(
             encoding='utf-8')), 6)
     
-    if collision_probability < 0.2:
-        collision_reward = -1
-    else:
-        collision_reward = collision_probability
+    collision_reward = collision_probability
     
     violation_rate_reward = round(float(
         (requests.get("http://localhost:8933/LGSVL/Status/ViolationRateReward")).content.decode(
             encoding='utf-8')), 6)
     
-    if violation_rate_reward < 0.2:
+    if violation_rate_reward < 0.2 and collision_probability < 0.2:
         violation_reward = -1
     else:
         violation_reward = violation_rate_reward
@@ -421,7 +418,7 @@ if __name__ == '__main__':
     # if int(road_num) >= 2:
     #     dqn.eval_net.load_state_dict(torch.load('./model/InnerCollision_new_action_space_2000MS_'+second+'s/eval_net_600_road'+str(int(road_num)-1)+'.pt'))
         
-    folder_name = './model/movite_tartu_basic_3_0/'
+    folder_name = './model/movite_tartu_diversity_level/'
     
     if not os.path.isdir(folder_name):
         print("Create dir", folder_name)

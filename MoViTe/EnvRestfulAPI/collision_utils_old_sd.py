@@ -406,36 +406,32 @@ def calculate_measures(state_list, ego_state, isNpcVehicle, current_signals, ego
                        orientation, mid_point = None, dis_tag = True):
     
     ego_transform = ego_state.transform
-    ego_speed = ego_state.speed
+    ego_speed = ego_state.speed if ego_state.speed > 0 else 0.0001
     
     ego_position = np.array([ego_transform.position.x, ego_transform.position.y, ego_transform.position.z])
     ego_velocity = np.array([ego_state.velocity.x, ego_state.velocity.y, ego_state.velocity.z])
-    
-    ego_acc = None
-    
-    if ego_speed == 0:
-        ego_acc = np.array([6, 6, 6])
-    else:
-        ego_acc = np.array([ego_velocity[0] / ego_speed * 6, ego_velocity[1] / ego_speed * 6, ego_velocity[2] / ego_speed * 6])
-        if ego_acc[0] == 0: 
-            ego_acc[0] = 0.001
-        if ego_acc[1] == 0: 
-            ego_acc[1] = 0.001
-        if ego_acc[2] == 0: 
-            ego_acc[2] = 0.001
 
     trajectory_ego_k, trajectory_ego_b = get_line(ego_position, ego_velocity)
 
+    # time_ego_list = []
+    # time_agent_list = []
     TTC = 100000
-    distance = 10000
+    distance = 100000
     loProC_list, laProC_list = [0], [0]  # probability
+    
+    vioRate_list = [0] # violation rate
+    laVioRate_list = [0]
+    loVioRate_list = [0]
+    
     frontVioRate_list = [0]
+    loFrontVioRate_list = [0]
+    laFrontVioRate_list = [0]
+     
     behindVioRate_list = [0]
-    proC_list = [0]
-    vioRate_list = [0]
+    loBehindVioRate_list = [0]
+    laBehindVioRate_list = [0]
     
-    reaction_time = 0.5
-    
+    #for i in range(1, len(agents)):
     for i in range(0, len(state_list)):
         transform = state_list[i].transform
         state = state_list[i]
@@ -445,114 +441,84 @@ def calculate_measures(state_list, ego_state, isNpcVehicle, current_signals, ego
         if judge_intersect_behind(ego_position, ego_velocity, a_position, a_velocity):
             continue
         
-        dis_vec = np.array([ego_position[0] - a_position[0], ego_position[1] - a_position[1], ego_position[2] - a_position[2]])
-        
-        agent_acc = None
-        
         if dis_tag:
             dis = get_distance(ego_position, a_position[0], a_position[2])
+            # dis = cal_dis(a_position, mid_point)
+            # print("Distance from ego to obstacle: ", dis)
             distance = dis if dis <= distance else distance
         trajectory_agent_k, trajectory_agent_b = get_line(a_position, a_velocity)
-        agent_speed = state.speed
-        if isNpcVehicle[i]:
-            if agent_speed == 0:
-                agent_acc = np.array([6, 6, 6])
-            else:
-                agent_acc = np.array([a_velocity[0] / state.speed * 6, a_velocity[1] / state.speed * 6, a_velocity[2] / state.speed * 6])
-        else:
-            if agent_speed == 0:
-                agent_acc = np.array([1.5, 1.5, 1.5])
-            else:
-                agent_acc = np.array([a_velocity[0] / state.speed * 1.5, a_velocity[1] / state.speed * 1.5, a_velocity[2] / state.speed * 1.5])
+        agent_speed = state.speed if state.speed > 0 else 0.0001
 
-        if agent_acc[0] == 0: 
-            agent_acc[0] = 0.001
-        if agent_acc[1] == 0: 
-            agent_acc[1] = 0.001
-        if agent_acc[2] == 0: 
-            agent_acc[2] = 0.001
+        same_lane, ego_ahead, ttc = judge_same_line(ego_position, ego_speed, ego_velocity,
+                                                    a_position, state.speed, trajectory_ego_k, trajectory_agent_k)
+        ego_deceleration = 6  # probability
+        if same_lane:
+            # print('Driving on Same Lane, TTC: {}'.format(ttc))
+            time_ego = ttc
+            time_agent = ttc
 
-        ttc = 5
-
-        time_ego = ttc
-        time_agent = ttc
-
-        # Calculate LoSD
-        loSD = 100000
-
-        if ego_velocity[0] * a_velocity[0] > 0:
-            if ego_velocity[0] * (ego_position[0] - a_position[0]) < 0:
+            loSD = 100000
+            if isNpcVehicle[i]:  # type value, 1-EGO, 2-NPC, 3-Pedestrian
+                agent_deceleration = 6
                 loSD = 1 / 2 * (
-                    abs(pow(ego_velocity[0], 2) / ego_acc[0] - pow(a_velocity[0], 2) / agent_acc[0])) + ego_velocity[0] * reaction_time
-            else: 
-                loSD = 1 / 2 * (
-                    abs(pow(ego_velocity[0], 2) / ego_acc[0] - pow(a_velocity[0], 2) / agent_acc[0])) + a_velocity[0] * reaction_time
+                    abs(pow(ego_speed, 2) / ego_deceleration - pow(agent_speed, 2) / agent_deceleration)) + 5
+            else:
+                agent_deceleration = 1.5
+                loSD = 1 / 2 * (pow(ego_speed, 2) / ego_deceleration - pow(agent_speed, 2) / agent_deceleration) + 5
+            loProC = calculate_collision_probability(loSD, distance)
+            loProC_list.append(loProC)
+            
+            loVioRate = calculate_violation_rate(loSD, distance)
+            loVioRate_list.append(loVioRate)
+            
+            if ego_velocity[0] * (ego_position[0] - a_position[0]) + ego_velocity[2] * (ego_position[2] - a_position[2]) < 0:
+                loFrontVioRate_list.append(loVioRate)
+            else:
+                loBehindVioRate_list.append(loVioRate)
+                
+            
         else:
-            loSD = 1 / 2 * (
-                abs(pow(ego_velocity[0], 2) / ego_acc[0] + pow(a_velocity[0], 2) / agent_acc[0]))
-        
-        loProC = calculate_collision_probability(loSD, abs(ego_position[0] - a_position[0]))
-        loVioRate = calculate_violation_rate(loSD, abs(ego_position[0] - a_position[0]))
-        loProC_list.append(loProC)
+            trajectory_agent_k = trajectory_agent_k if trajectory_ego_k - trajectory_agent_k != 0 else trajectory_agent_k + 0.0001
 
-        # Calculate LaSD
-        trajectory_agent_k = trajectory_agent_k if trajectory_ego_k - trajectory_agent_k != 0 else trajectory_agent_k + 0.0001
+            collision_point_x, collision_point_z = (trajectory_agent_b - trajectory_ego_b) / (
+                        trajectory_ego_k - trajectory_agent_k), \
+                                                   (
+                                                               trajectory_ego_k * trajectory_agent_b - trajectory_agent_k * trajectory_ego_b) / (
+                                                               trajectory_ego_k - trajectory_agent_k)
 
-        collision_point_x, collision_point_z = (trajectory_agent_b - trajectory_ego_b) / (
-                    trajectory_ego_k - trajectory_agent_k), \
-                                                (
-                                                            trajectory_ego_k * trajectory_agent_b - trajectory_agent_k * trajectory_ego_b) / (
-                                                            trajectory_ego_k - trajectory_agent_k)
-
-        ego_distance = get_distance(ego_position, collision_point_x, collision_point_z)
-        agent_distance = get_distance(a_position, collision_point_x, collision_point_z)
-        if ego_speed:
+            ego_distance = get_distance(ego_position, collision_point_x, collision_point_z)
+            agent_distance = get_distance(a_position, collision_point_x, collision_point_z)
             time_ego = ego_distance / ego_speed
-        else:
-            time_ego = ego_distance / 0.001
-        if agent_speed:
             time_agent = agent_distance / agent_speed
-        else:
-            time_agent = agent_distance / 0.001
-        
-        laSD = 1000000
-        
-        if ego_velocity[2] * a_velocity[2] > 0:
-            if ego_velocity[2] * (ego_position[2] - a_position[2]) < 0:
-                laSD = 1 / 2 * (
-                    abs(pow(ego_velocity[2], 2) / ego_acc[2] - pow(a_velocity[2], 2) / agent_acc[2])) + ego_velocity[2] * reaction_time
-            else: 
-                laSD = 1 / 2 * (
-                    abs(pow(ego_velocity[2], 2) / ego_acc[2] - pow(a_velocity[2], 2) / agent_acc[2])) + a_velocity[2] * reaction_time
-        else:
-            laSD = 1 / 2 * (
-                abs(pow(ego_velocity[2], 2) / ego_acc[2] + pow(a_velocity[2], 2) / agent_acc[2]))
+            # print('Driving on Different Lane, TTC: {}'.format(time_ego))
 
-        laProC = calculate_collision_probability(laSD, abs(ego_position[2] - a_position[2]))
-        laVioRate = calculate_violation_rate(laSD, abs(ego_position[2] - a_position[2]))
-        laProC_list.append(laProC)
-        
-        proC = laProC * loProC
-        
-        vioRate = laVioRate * loVioRate
-        
-        if get_cos(dis_vec, ego_velocity) < 0:
-            frontVioRate_list.append(vioRate)
-        else:
-            if get_cos(ego_velocity, a_velocity) > 0:
-                behindVioRate_list.append(vioRate)
-        
-        proC_list.append(proC)
-        vioRate_list.append(vioRate)
-        
+            theta = calculate_angle_tan(trajectory_ego_k, trajectory_agent_k)
+            # print(trajectory_ego_k, trajectory_agent_k, theta)
+            laSD = pow(ego_speed * math.sin(theta), 2) / (ego_deceleration * math.sin(theta)) + 5
+            laProC = calculate_collision_probability(laSD, distance)
+            laProC_list.append(laProC)
+            
+            laVioRate = calculate_violation_rate(laSD, distance)
+            laVioRate_list.append(laVioRate)
+            
+            if ego_velocity[0] * (ego_position[0] - a_position[0]) + ego_velocity[2] * (ego_position[2] - a_position[2]) < 0:
+                laFrontVioRate_list.append(laVioRate)
+            else:
+                laBehindVioRate_list.append(laVioRate)
+
         if abs(time_ego - time_agent) < 1:
             TTC = min(TTC, (time_ego + time_agent) / 2)
 
-    proC_dt = max(proC_list) + (1 - max(proC_list)) * min(proC_list)
-    vioRate_dt = max(vioRate_list) + (1 - max(vioRate_list)) * min(vioRate_list)
-    frontVioRate_dt = max(frontVioRate_list) + (1 - max(frontVioRate_list)) * min(frontVioRate_list)
-    behindVioRate_dt = max(behindVioRate_list) + (1 - max(behindVioRate_list)) * min(behindVioRate_list)
-    
+    loProC_dt, laProC_dt = max(loProC_list), max(laProC_list)
+    loVioRate_dt, laVioRate_dt = max(loVioRate_list), max(laVioRate_list)
+    loFrontVioRate_dt, laFrontVioRate_dt = max(loFrontVioRate_list), max(laFrontVioRate_list)
+    loBehindVioRate_dt, laBehindVioRate_dt = max(loBehindVioRate_list), max(laBehindVioRate_list)
+
+    proC_dt = max(loProC_dt, laProC_dt) + (1 - max(loProC_dt, laProC_dt)) * min(loProC_dt, laProC_dt)
+    vioRate_dt = max(loVioRate_dt, laVioRate_dt) + (1 - max(loVioRate_dt, laVioRate_dt)) * min(loVioRate_dt, laVioRate_dt)
+    frontVioRate_dt = max(loFrontVioRate_dt, laFrontVioRate_dt) + (1 - max(loFrontVioRate_dt, laFrontVioRate_dt)) * min(loFrontVioRate_dt, laFrontVioRate_dt)
+    behindVioRate_dt = max(loBehindVioRate_dt, laBehindVioRate_dt) + (1 - max(loBehindVioRate_dt, laBehindVioRate_dt)) * min(loBehindVioRate_dt, laBehindVioRate_dt)
+        
     #Passing 0, Lane Changing 1, Turning 2, Braking 3, Speeding 4, Cruising 5, Other 6
     condition, curr_tlight_sign = judge_condition(state_list, ego_state, prev_brake_percentage, brake_percentage, ego_curr_acc, road, next_road, p_lane_id, current_signals, p_tlight_sign, orientation)
     
