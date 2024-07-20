@@ -483,10 +483,10 @@ def calculate_measures(state_list, ego_state, isNpcVehicle, current_signals, ego
         if ego_velocity[0] * a_velocity[0] > 0:
             if ego_velocity[0] * (ego_position[0] - a_position[0]) < 0:
                 loSD = 1 / 2 * (
-                    abs(pow(ego_velocity[0], 2) / ego_acc[0] - pow(a_velocity[0], 2) / agent_acc[0])) + ego_velocity[0] * reaction_time
+                    abs(pow(ego_velocity[0], 2) / ego_acc[0] - pow(a_velocity[0], 2) / agent_acc[0])) + abs(ego_velocity[0]) * reaction_time
             else: 
                 loSD = 1 / 2 * (
-                    abs(pow(ego_velocity[0], 2) / ego_acc[0] - pow(a_velocity[0], 2) / agent_acc[0])) + a_velocity[0] * reaction_time
+                    abs(pow(ego_velocity[0], 2) / ego_acc[0] - pow(a_velocity[0], 2) / agent_acc[0])) + abs(a_velocity[0]) * reaction_time
         else:
             loSD = 1 / 2 * (
                 abs(pow(ego_velocity[0], 2) / ego_acc[0] + pow(a_velocity[0], 2) / agent_acc[0]))
@@ -520,10 +520,10 @@ def calculate_measures(state_list, ego_state, isNpcVehicle, current_signals, ego
         if ego_velocity[2] * a_velocity[2] > 0:
             if ego_velocity[2] * (ego_position[2] - a_position[2]) < 0:
                 laSD = 1 / 2 * (
-                    abs(pow(ego_velocity[2], 2) / ego_acc[2] - pow(a_velocity[2], 2) / agent_acc[2])) + ego_velocity[2] * reaction_time
+                    abs(pow(ego_velocity[2], 2) / ego_acc[2] - pow(a_velocity[2], 2) / agent_acc[2])) + abs(ego_velocity[2]) * reaction_time
             else: 
                 laSD = 1 / 2 * (
-                    abs(pow(ego_velocity[2], 2) / ego_acc[2] - pow(a_velocity[2], 2) / agent_acc[2])) + a_velocity[2] * reaction_time
+                    abs(pow(ego_velocity[2], 2) / ego_acc[2] - pow(a_velocity[2], 2) / agent_acc[2])) + abs(a_velocity[2]) * reaction_time
         else:
             laSD = 1 / 2 * (
                 abs(pow(ego_velocity[2], 2) / ego_acc[2] + pow(a_velocity[2], 2) / agent_acc[2]))
