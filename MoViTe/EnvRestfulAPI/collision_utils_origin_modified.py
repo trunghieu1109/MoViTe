@@ -416,7 +416,7 @@ def calculate_measures(state_list, ego_state, isNpcVehicle, current_signals, ego
     if ego_speed == 0:
         ego_acc = np.array([6, 6, 6])
     else:
-        ego_acc = np.array([ego_velocity[0] / ego_speed * 6, ego_velocity[1] / ego_speed * 6, ego_velocity[2] / ego_speed * 6])
+        ego_acc = np.array([abs(ego_velocity[0]) / ego_speed * 6, abs(ego_velocity[1]) / ego_speed * 6, abs(ego_velocity[2]) / ego_speed * 6])
         if ego_acc[0] == 0: 
             ego_acc[0] = 0.001
         if ego_acc[1] == 0: 
@@ -458,12 +458,12 @@ def calculate_measures(state_list, ego_state, isNpcVehicle, current_signals, ego
             if agent_speed == 0:
                 agent_acc = np.array([6, 6, 6])
             else:
-                agent_acc = np.array([a_velocity[0] / state.speed * 6, a_velocity[1] / state.speed * 6, a_velocity[2] / state.speed * 6])
+                agent_acc = np.array([abs(a_velocity[0]) / state.speed * 6, abs(a_velocity[1]) / state.speed * 6, abs(a_velocity[2]) / state.speed * 6])
         else:
             if agent_speed == 0:
                 agent_acc = np.array([1.5, 1.5, 1.5])
             else:
-                agent_acc = np.array([a_velocity[0] / state.speed * 1.5, a_velocity[1] / state.speed * 1.5, a_velocity[2] / state.speed * 1.5])
+                agent_acc = np.array([abs(a_velocity[0]) / state.speed * 1.5, abs(a_velocity[1]) / state.speed * 1.5, abs(a_velocity[2]) / state.speed * 1.5])
 
         if agent_acc[0] == 0: 
             agent_acc[0] = 0.001
@@ -532,9 +532,9 @@ def calculate_measures(state_list, ego_state, isNpcVehicle, current_signals, ego
         laVioRate = calculate_violation_rate(laSD, abs(ego_position[2] - a_position[2]))
         laProC_list.append(laProC)
         
-        proC = laProC * loProC
+        proC = (laProC + loProC) / 2
         
-        vioRate = laVioRate * loVioRate
+        vioRate = (laVioRate + loVioRate) / 2
         
         if get_cos(dis_vec, ego_velocity) < 0:
             frontVioRate_list.append(vioRate)
@@ -569,7 +569,11 @@ def calculate_measures(state_list, ego_state, isNpcVehicle, current_signals, ego
             violation_rate_ = frontVioRate_dt
         else:
             violation_rate_ = vioRate_dt
-        np_condition.append(condition[i] * violation_rate_)
+            
+        if i == 5:
+            np_condition.append(condition[i])
+        else:    
+            np_condition.append(condition[i] * violation_rate_)
     
     # np_condition.append(proC_dt)
     
