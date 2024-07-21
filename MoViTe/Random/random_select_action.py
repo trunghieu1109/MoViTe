@@ -7,6 +7,19 @@ import numpy as np
 import json
 import os 
 
+mode = 'basic' # basic, flexible, diversity, full
+
+requests.post("http://localhost:8933/LGSVL/SetMode?mode=" + mode)
+
+if mode == 'diversity':
+    w_col_prob = 0.5
+    w_vio_prob = 0.3
+    w_div_level = 0.2
+else:
+    w_col_prob = 0.6
+    w_vio_prob = 0.4
+    w_div_level = 0.0
+
 
 # Execute action
 def execute_action(action_id):
@@ -66,17 +79,60 @@ def calculate_reward(action_id):
     :param action_id:
     :return:
     """
+    
+    global w_div_level
+    global w_vio_prob
+    global w_col_prob
+    
     vioRate_list, obstacle_uid = execute_action(action_id)
     observation = get_environment_state()
     action_reward = 0
     violation_rate = 0
+    violation_reward = 0
+    diversity_level = 0
+    collision_probability = 0
+    collision_reward = 0
     episode_done = judge_done()
     
-    violation_rate = round(float(
-        (requests.get("http://localhost:8933/LGSVL/Status/ViolationRate")).content.decode(
+    collision_probability = round(float(
+        (requests.get("http://localhost:8933/LGSVL/Status/CollisionProbability")).content.decode(
             encoding='utf-8')), 6)
+    
+    collision_reward = collision_probability
+    
+    violation_rate_reward = round(float(
+        (requests.get("http://localhost:8933/LGSVL/Status/ViolationRateReward")).content.decode(
+            encoding='utf-8')), 6)
+    
+    if violation_rate_reward < 0.2 and collision_probability < 0.2:
+        violation_reward = -1
+    else:
+        violation_reward = violation_rate_reward
+        
+    isViolation = False
+    
+    for i in range(0, 7):
+        if float(vioRate_list[i]) == 1.0:
+            isViolation = True
+    
+    isCollision = False
+    if float(collision_probability) == 1.0:
+        isCollision = True
+    
+    addition_collision_reward = 0.0
+    if isViolation and isCollision:
+        addition_collision_reward = 1.0
+        
+    collision_reward += addition_collision_reward
+    
+    diversity_level = round(float(
+        (requests.get("http://localhost:8933/LGSVL/Status/DiversityLevel")).content.decode(
+            encoding='utf-8')), 6)
+        
+    action_reward = w_col_prob * collision_reward + w_vio_prob * violation_reward + w_div_level * diversity_level
             
-    return observation, violation_rate, episode_done, vioRate_list, obstacle_uid
+    return observation, action_reward, violation_reward, episode_done, vioRate_list, collision_probability, obstacle_uid
+
 
 
 def get_environment_state():
@@ -143,24 +199,24 @@ def get_environment_state():
     
     return state
 
-requests.post("http://localhost:8933/LGSVL/LoadScene?scene=bd77ac3b-fbc3-41c3-a806-25915c777022&road_num=" + '1')
+requests.post("http://localhost:8933/LGSVL/LoadScene?scene=12da60a7-2fc9-474d-a62a-5cc08cb97fe8&road_num=" + '3')
 requests.post("http://localhost:8933/LGSVL/SetObTime?observation_time=6")
 
 action_space = get_action_space()['command']
 action_space_size = action_space['num']
 
 for loop in range(0, 5):
-    title = ["Episode", "Step", "State", "Action", "Violation Rate", "Collision_uid", "Violation Rate List" "Done"]
+    title = ["Episode", "Step", "State", "Action", "Violation Rate", "Collision_uid", "Violation Rate List", "Collision_Probability", "Done"]
     df_title = pd.DataFrame([title])
     file_name = str(int(time.time()))
     
-    file_path = '../ExperimentData/Random-or-Non-random Analysis/Data_Random/'
+    file_path = '../ExperimentData/Random-or-Non-random Analysis/Data_Random_SanFrancisco_road3/'
     
     if not os.path.isdir(file_path):
         print("Create dir", file_path)
         os.makedirs(file_path)
     
-    df_title.to_csv(file_path + 'random_6s_road1_' + file_name + '_dis_1' + '.csv', mode='w', header=False, index=None)
+    df_title.to_csv(file_path + 'random_6s_road3_' + file_name + '_dis_1' + '.csv', mode='w', header=False, index=None)
 
     iteration = 0
     step = 0
@@ -178,22 +234,22 @@ for loop in range(0, 5):
         
             try:
                 api_id = random.randint(0, action_space_size - 1)
-                _, violation_rate, done, vioRate_list, collision_uid, = calculate_reward(api_id)
+                _, _, violation_rate, done, vioRate_list, proC, collision_uid, = calculate_reward(api_id)
             except json.JSONDecodeError as e:
                 print(e)
                 retry = True
 
-        print('api_id, violation_rate, violation_rate_list, done: ', api_id, violation_rate, vioRate_list, done)
+        print('api_id, violation_rate, violation_rate_list, collision probability, done: ', api_id, violation_rate, vioRate_list, proC, done)
 
-        pd.DataFrame([[iteration, step, s, api_id, violation_rate, collision_uid, vioRate_list, done]]).to_csv(
-            '../ExperimentData/Random-or-Non-random Analysis/Data_Random_Opt_Min_Dis/random_6s_road1_' + file_name + '_dis_1' + '.csv',
+        pd.DataFrame([[iteration, step, s, api_id, violation_rate, collision_uid, vioRate_list, proC, done]]).to_csv(
+            file_path + 'random_6s_road1_' + file_name + '_dis_1' + '.csv',
             mode='a',
             header=False, index=None)
 
         step += 1
         if done:
             # break
-            requests.post("http://localhost:8933/LGSVL/LoadScene?scene=bd77ac3b-fbc3-41c3-a806-25915c777022&road_num=" + '1')
+            requests.post("http://localhost:8933/LGSVL/LoadScene?scene=12da60a7-2fc9-474d-a62a-5cc08cb97fe8&road_num=" + '3')
             iteration += 1
             step = 0
             print("Start episode ", iteration)
