@@ -128,7 +128,7 @@ msg_socket.connect(server_address)
 
 # import lane_information
 
-map = 'sanfrancisco' # map: tartu, sanfrancisco, borregasave
+map = 'tartu' # map: tartu, sanfrancisco, borregasave
 
 lanes_map_file = "./map/{}_lanes.pkl".format(map)
 lanes_map = None
@@ -584,6 +584,8 @@ def calculate_metrics(agents, ego):
     
     isViolation = False
     
+    violation_reward_list = []
+    
     for i in range (0, len(max_values)):
         if max_values[i] > 0:
             cnt_vio += 1
@@ -594,15 +596,23 @@ def calculate_metrics(agents, ego):
             
             if flexible_weight:
                 total_rate += (max_values[i] + addition) * violation_weight[i]
+                violation_reward_list.append((max_values[i] + addition) * violation_weight[i])
             else:
                 total_rate += (max_values[i] + addition)
+                violation_reward_list.append(max_values[i] + addition)
+                
             if float(max_values[i]) == 1.0:
                 isViolation = True
+        else:
+            violation_reward_list.append(0)
     
     if cnt_vio == 0:
         cnt_vio = 1
+        
+    max_vioReward = max(violation_reward_list)
+    avg_rest_vioReward = (total_rate - max_vioReward) / (max(cnt_vio - 1, 1))
     
-    vioRate_reward = total_rate / cnt_vio
+    vioRate_reward = max_vioReward + (2 - max_vioReward) * avg_rest_vioReward
     
     # print("Merged Frame List: ")
     

@@ -17,7 +17,7 @@ from utils import *
 
 current_eps = ''
 start_eps = '0'
-end_eps = '200'
+end_eps = '150'
 
 mode = 'basic' # basic, flexible, diversity, full
 
@@ -418,7 +418,7 @@ if __name__ == '__main__':
     # if int(road_num) >= 2:
     #     dqn.eval_net.load_state_dict(torch.load('./model/InnerCollision_new_action_space_2000MS_'+second+'s/eval_net_600_road'+str(int(road_num)-1)+'.pt'))
         
-    folder_name = './model/movite_tartu_basic_sanfrancisco_3/'
+    folder_name = './model/movite_tartu_basic_sanfrancisco_3_new_reward/'
     
     if not os.path.isdir(folder_name):
         print("Create dir", folder_name)

@@ -7,6 +7,7 @@ import numpy as np
 import torch 
 from movite_training_model import DQN
 import json
+import os
 
 mode = 'basic' # basic, flexible, diversity, full
 
@@ -96,16 +97,13 @@ def calculate_reward(action_id):
         (requests.get("http://localhost:8933/LGSVL/Status/CollisionProbability")).content.decode(
             encoding='utf-8')), 6)
     
-    if collision_probability < 0.2:
-        collision_reward = -1
-    else:
-        collision_reward = collision_probability
+    collision_reward = collision_probability
     
     violation_rate_reward = round(float(
         (requests.get("http://localhost:8933/LGSVL/Status/ViolationRateReward")).content.decode(
             encoding='utf-8')), 6)
     
-    if violation_rate_reward < 0.2:
+    if violation_rate_reward < 0.2 and collision_probability < 0.2:
         violation_reward = -1
     else:
         violation_reward = violation_rate_reward
@@ -132,7 +130,7 @@ def calculate_reward(action_id):
         
     action_reward = w_col_prob * collision_reward + w_vio_prob * violation_reward + w_div_level * diversity_level
             
-    return observation, action_reward, violation_rate, episode_done, vioRate_list, collision_probability, obstacle_uid
+    return observation, action_reward, violation_reward, episode_done, vioRate_list, collision_probability, obstacle_uid
 
 
 def get_environment_state():
@@ -201,7 +199,7 @@ def get_environment_state():
 
 for hieu in range(0, 5):
     # initialize the environment
-    requests.post("http://localhost:8933/LGSVL/LoadScene?scene=bd77ac3b-fbc3-41c3-a806-25915c777022&road_num=" + '1')
+    requests.post("http://localhost:8933/LGSVL/LoadScene?scene=12da60a7-2fc9-474d-a62a-5cc08cb97fe8&road_num=" + '3')
     requests.post("http://localhost:8933/LGSVL/SetObTime?observation_time=6")
 
     action_space = get_action_space()['command']
@@ -209,15 +207,15 @@ for hieu in range(0, 5):
 
     print("Number of actions: ", action_space_size)
 
-    current_eps = str(200)
+    current_eps = str(150)
     road_num = str(1)
 
     file_name = str(int(time.time()))
 
     dqn = DQN()
     
-    model_path = './model/movite_tartu_basic_2_1/'
-    log_path = '../ExperimentData/Random-or-Non-random Analysis/movite_tartu_basic_2_1/'
+    model_path = './model/movite_tartu_basic_sanfrancisco_3_new_reward/'
+    log_path = '../ExperimentData/Random-or-Non-random Analysis/movite_tartu_basic_sanfrancisco_3_new_reward/'
     
     if not os.path.isdir(log_path):
         print("Create dir", log_path)
@@ -226,7 +224,7 @@ for hieu in range(0, 5):
     dqn.eval_net.load_state_dict(torch.load(model_path + 'eval_net_' + current_eps + '_road' + road_num + '.pt'))
     dqn.target_net.load_state_dict(torch.load(model_path + 'target_net_' + current_eps + '_road' + road_num + '.pt'))
 
-    title = ["Episode", "State", "Action", "Choosing_Type", "Violation Rate", "Violation Rate List", "Collision_uid", "Done"]
+    title = ["Episode", "State", "Action", "Choosing_Type", "Violation Rate", "Violation Rate List", "Collision_Probability", "Collision_uid", "Done"]
     df_title = pd.DataFrame([title])
     
     df_title.to_csv(log_path + 'dqn_6s_road1_' + current_eps + 'eps_' + file_name + '.csv', mode='w', header=False, index=None)
@@ -258,7 +256,7 @@ for hieu in range(0, 5):
         
             try:
                 action, type = dqn.choose_action(s, current_step, previous_weather_and_time_step)
-                _, vioRate, done, vioRate_list, proC, collision_uid, = calculate_reward(action)
+                _, _, vioRate, done, vioRate_list, proC, collision_uid, = calculate_reward(action)
             except json.JSONDecodeError as e:
                 print(e)    
                 retry = True 
@@ -286,7 +284,7 @@ for hieu in range(0, 5):
 
         step += 1
         if done:
-            requests.post("http://localhost:8933/LGSVL/LoadScene?scene=bd77ac3b-fbc3-41c3-a806-25915c777022&road_num=" + '1')
+            requests.post("http://localhost:8933/LGSVL/LoadScene?scene=12da60a7-2fc9-474d-a62a-5cc08cb97fe8&road_num=" + '3')
 
             print("Length of episode: ", len(state_))
             if len(state_) <= 5:
