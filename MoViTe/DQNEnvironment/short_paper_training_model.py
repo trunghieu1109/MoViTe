@@ -29,13 +29,10 @@ scene = '12da60a7-2fc9-474d-a62a-5cc08cb97fe8'
 requests.post(f"http://localhost:8933/LGSVL/LoadScene?scene={scene}&road_num=" + road_num)
 file_name = str(int(time.time()))
 
-with open('position.pkl') as file:
-    map_pos = pickle.load(file)
-
 goal = [
-    map_pos[scene][raod_num]['des_pos']['x'], 
-    map_pos[scene][raod_num]['des_pos']['y'], 
-    map_pos[scene][raod_num]['des_pos']['z']
+    -208.2, 
+    10.2, 
+    -181.6
 ]
 
 def get_environment_state():
@@ -237,12 +234,18 @@ def execute_action(action_id):
     print(response)
     try:
         proC_list = response.json()['probability']
+        DTO_list = response.json()['distance']
+        ETTC_list = response.json()['ETTC']
+        JERK_list = response.json()['JERK']
         obstacle_uid = response.json()['collision_uid']
     except Exception as e:
         print(e)
         proC_list = [-1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -1.0]
+        DTO_list = [-1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -1.0]
+        ETTC_list = [-1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -1.0]
+        JERK_list = [-1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -1.0]
         
-    return proC_list, obstacle_uid
+    return proC_list, DTO_list, ETTC_list, JERK_list, obstacle_uid
 
 check_num = 5  # here depend on observation time: 2s->10, 4s->6, 6s->
 
@@ -288,7 +291,7 @@ def calculate_reward(action_id):
     global ETTC_threshold
     global JERK_threshold
     
-    proC_list, obstacle_uid = execute_action(action_id)
+    proC_list, DTO_list, ETTC_list, JERK_list, obstacle_uid = execute_action(action_id)
     observation = get_environment_state()
     action_reward = 0
     
@@ -310,10 +313,11 @@ def calculate_reward(action_id):
         collision_probability = round(float(
             (requests.get("http://localhost:8933/LGSVL/Status/CollisionProbability")).content.decode(
                 encoding='utf-8')), 6)
-        if collision_probability < 0.2:
-            collision_reward = -1
-        else:
-            collision_reward = collision_probability
+        
+        collision_reward = collision_probability
+        
+    print("Collision Probability: ", collision_probability)
+    print("Collision Reward: ", collision_reward)
       
     # Distance to obstacles reward
           
@@ -328,6 +332,9 @@ def calculate_reward(action_id):
     else:
         DTO_reward = -1
         
+    print("Distance to obstacles: ", DTO)
+    print("DTO Reward: ", DTO_reward)
+        
     # Estimated time to collision reward
     
     ETTC = round(float(
@@ -341,6 +348,9 @@ def calculate_reward(action_id):
     else:
         ETTC_reward = -1
         
+    print("Estimated time to collision: ", ETTC)
+    print("ETTC Reward: ", ETTC_reward)
+        
     # JERK reward
     
     JERK = round(float(
@@ -349,17 +359,21 @@ def calculate_reward(action_id):
     
     JERK_reward = 0
     
+    print("JERK: ", JERK)
+    
     if JERK > JERK_threshold:
-        JERK_reward = math.exp((JERK - 0) / (0.9 - 0)) - 1
+        JERK_reward = math.exp((JERK - 0) / (10 - 0)) - 1
     else:
         JERK_reward = -1
+        
+    print("JERK Reward: ", JERK_reward)
 
     action_reward = collision_reward + DTO_reward / 3 + JERK_reward / 3 + ETTC_reward / 3
             
-    return observation, action_reward, collision_probability, DTO, ETTC, JERK, episode_done, proC_list, obstacle_uid
+    return observation, action_reward, collision_probability, DTO, ETTC, JERK, episode_done, proC_list, DTO_list, ETTC_list, JERK_list, obstacle_uid
 
 title = ["Episode", "Step", "State", "Action", "Reward", "Collision Probability", "Collision Probability List", 
-         "Distance To Obstacles", "Estimated Time To Collision", "JERK", "Action_Description", "Done"]
+         "Distance To Obstacles", "Estimated Time To Collision", "JERK", "DTO_list", "ETTC_list", "JERK_list", "Action_Description", "Done"]
 df_title = pd.DataFrame([title])
 
 if __name__ == '__main__':
@@ -370,6 +384,8 @@ if __name__ == '__main__':
     dqn = DQN()
         
     folder_name = './model/short_paper_sanfrancisco_road3/'
+    
+    print("Folder name: ", folder_name)
     
     if not os.path.isdir(folder_name):
         print("Create dir", folder_name)
@@ -414,17 +430,21 @@ if __name__ == '__main__':
         requests.post(f"http://localhost:8933/LGSVL/LoadScene?scene={scene}&road_num=" + road_num)
 
         s = get_environment_state()
+        # print("Environment state: ", s)
         ep_r = 0
         step = 0
         while True:
             current_step = step
             action, _ = dqn.choose_action(s, current_step, previous_weather_and_time_step)
+            
             if 0 <= action and action <= 12:
                 previous_weather_and_time_step = step
                 
             action_description = scenario_space[str(action)]
+            
+            # print("Action chosen: ", action, action_description)
             # take action
-            s_, reward, proC, DTO, ETTC, JERK, done, proC_list, obstacle_uid = calculate_reward(action)
+            s_, reward, proC, DTO, ETTC, JERK, done, proC_list, DTO_list, ETTC_list, JERK_list, obstacle_uid = calculate_reward(action)
             
             print("Reward: ", reward)
             
@@ -463,9 +483,9 @@ if __name__ == '__main__':
             
             # Consider whether colliding to obstacle (signal, static obstacle, v.v) or not
             if collide_with_obstacle == True:
-                dis_x = pre_pos_obstacle_collision = None['x'] - s_[0]
-                dis_y = pre_pos_obstacle_collision = None['y'] - s_[1]
-                dis_z = pre_pos_obstacle_collision = None['z'] - s_[2]
+                dis_x = pre_pos_obstacle_collision['x'] - s_[0]
+                dis_y = pre_pos_obstacle_collision['y'] - s_[1]
+                dis_z = pre_pos_obstacle_collision['z'] - s_[2]
                 dis_ = math.sqrt(dis_x ** 2 + dis_y ** 2 + dis_z ** 2)
                 
                 if dis_ <= 2:
@@ -482,7 +502,7 @@ if __name__ == '__main__':
             else:
                 collide_with_obstacle = False
             
-            pre_pos_obstacle_collision = None = {
+            pre_pos_obstacle_collision = {
                 'x': s_[0],
                 'y': s_[1],
                 'z': s_[2],
@@ -493,7 +513,7 @@ if __name__ == '__main__':
                     "<" + action_description + ">",
                     done)
             pd.DataFrame(
-                [[i_episode, step, s, action, reward, proC, proC_list, DTO, ETTC, JERK, action_description, done]]).to_csv(
+                [[i_episode, step, s, action, reward, proC, proC_list, DTO, ETTC, JERK, DTO_list, ETTC_list, JERK_list, action_description, done]]).to_csv(
                 log_name,
                 mode='a',
                 header=False, index=None)
@@ -524,7 +544,7 @@ if __name__ == '__main__':
             if done:
                 print("Restart episode")
                 collide_with_obstacle = False
-                pre_pos_obstacle_collision = None = None
+                pre_pos_obstacle_collision = None
                 prev_position = None
                 is_stopped = False
                 dqn.previous_weather_and_time = None

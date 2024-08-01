@@ -10,6 +10,33 @@ print("Using original collision utils")
 
 print('*' * 80)
 
+pedestrian = [
+    "Bob",
+    "EntrepreneurFemale",
+    "Howard",
+    "Johny",
+    "Pamela",
+    "Presley",
+    "Robin",
+    "Stephen",
+    "Zoe"
+]
+
+print("Bob" in pedestrian)
+
+# while True:
+#     print(random.randint(0, 8))
+
+npc_vehicle = {
+    "Sedan",
+    "SUV",
+    "Jeep",
+    "Hatchback",
+    "SchoolBus",
+    "BoxTruck"
+}
+
+
 # Calculate collision probability
 @jit(nopython=True, fastmath=True)
 def calculate_collision_probability(safe_distance, current_distance):
@@ -113,9 +140,13 @@ def get_brake_acc(velocity, speed, isVehicle):
     if speed == 0:
         brake_acc = np.array([deceleration_acc, deceleration_acc, deceleration_acc])
     else:
-        brake_acc = np.array([velocity[0] / speed * deceleration_acc, velocity[1] / speed * deceleration_acc, velocity[2] / speed * deceleration_acc])
-        for ax in brake_acc:
-            ax = max(abs(ax), 0.001)
+        clone = []
+        
+        for i in range(0, 3):
+            ax = max(abs(velocity[i] / speed * deceleration_acc), 0.001)
+            clone.append(ax)
+            
+        brake_acc = np.array(clone)
             
     return brake_acc
 
@@ -137,16 +168,20 @@ def calculate_measures(npc_state, ego_state, isNpcVehicle):
     
     ego_position, ego_velocity, ego_speed, ego_brake_acc = get_vehicle_info(ego_state, True)
 
+    print("EGO position: ", ego_position)
+    print("EGO velocity: ", ego_velocity)
+    print("EGO speed: ", ego_speed)
+    print("EGO brake acc: ", ego_brake_acc)
+
     trajectory_ego_k, trajectory_ego_b = get_line(ego_position, ego_velocity)
 
-    ETTC = 100000
-    distance = 10000
+    ETTC = 100
+    distance = 100000
     loProC_list, laProC_list = [0], [0]
     proC_list = [0]
     reaction_time = 0.5
     
     for i in range(0, len(npc_state)):
-        state = npc_state[i]
         
         a_position, a_velocity, agent_speed, agent_brake_acc = get_vehicle_info(npc_state[i], isNpcVehicle[i])
         
@@ -160,9 +195,14 @@ def calculate_measures(npc_state, ego_state, isNpcVehicle):
         # calculate DTO
         dis = get_distance(ego_position, a_position[0], a_position[2])
         distance = dis if dis <= distance else distance
+        
+        print("Sub distance: ", distance)
 
         # calculate ETTC
-        same_lane, _, ttc = judge_same_line(ego_position, ego_speed, ego_velocity, npc_position, npc_speed, trajectory_ego_k, trajectory_agent_k)
+        same_lane, _, ttc = judge_same_line(ego_position, ego_speed, ego_velocity, a_position, agent_speed, trajectory_ego_k, trajectory_agent_k)
+
+        time_ego = 100
+        time_agent = 100
 
         if same_lane:
             time_ego = ttc
@@ -170,8 +210,12 @@ def calculate_measures(npc_state, ego_state, isNpcVehicle):
         else:
             trajectory_agent_k = trajectory_agent_k if trajectory_ego_k - trajectory_agent_k != 0 else trajectory_agent_k + 0.0001
 
-            collision_point_x, collision_point_z = (trajectory_agent_b - trajectory_ego_b) / (trajectory_ego_k - trajectory_agent_k),
-                                                    (trajectory_ego_k * trajectory_agent_b - trajectory_agent_k * trajectory_ego_b) / (trajectory_ego_k - trajectory_agent_k)
+            collision_point_x, collision_point_z = (trajectory_agent_b - trajectory_ego_b) / (
+                        trajectory_ego_k - trajectory_agent_k), \
+                                                   (
+                                                               trajectory_ego_k * trajectory_agent_b - trajectory_agent_k * trajectory_ego_b) / (
+                                                               trajectory_ego_k - trajectory_agent_k)
+
 
             ego_distance = get_distance(ego_position, collision_point_x, collision_point_z)
             agent_distance = get_distance(a_position, collision_point_x, collision_point_z)
@@ -186,6 +230,8 @@ def calculate_measures(npc_state, ego_state, isNpcVehicle):
                 
         if abs(time_ego - time_agent) < 1:
             ETTC = min(ETTC, (time_ego + time_agent) / 2)
+            
+        print("Sub ETTC: ", ETTC)
 
         # Calculate LoSD
         loSD = 100000
@@ -193,13 +239,13 @@ def calculate_measures(npc_state, ego_state, isNpcVehicle):
         if ego_velocity[0] * a_velocity[0] > 0:
             if ego_velocity[0] * (ego_position[0] - a_position[0]) < 0:
                 loSD = 1 / 2 * (
-                    abs(pow(ego_velocity[0], 2) / ego_acc[0] - pow(a_velocity[0], 2) / agent_brake_acc[0])) + abs(ego_velocity[0]) * reaction_time
+                    abs(pow(ego_velocity[0], 2) / ego_brake_acc[0] - pow(a_velocity[0], 2) / agent_brake_acc[0])) + abs(ego_velocity[0]) * reaction_time
             else: 
                 loSD = 1 / 2 * (
-                    abs(pow(ego_velocity[0], 2) / ego_acc[0] - pow(a_velocity[0], 2) / agent_brake_acc[0])) + abs(a_velocity[0]) * reaction_time
+                    abs(pow(ego_velocity[0], 2) / ego_brake_acc[0] - pow(a_velocity[0], 2) / agent_brake_acc[0])) + abs(a_velocity[0]) * reaction_time
         else:
             loSD = 1 / 2 * (
-                abs(pow(ego_velocity[0], 2) / ego_acc[0] + pow(a_velocity[0], 2) / agent_brake_acc[0]))
+                abs(pow(ego_velocity[0], 2) / ego_brake_acc[0] + pow(a_velocity[0], 2) / agent_brake_acc[0]))
         
         loProC = calculate_collision_probability(loSD, abs(ego_position[0] - a_position[0]))
         loProC_list.append(loProC)
@@ -210,13 +256,13 @@ def calculate_measures(npc_state, ego_state, isNpcVehicle):
         if ego_velocity[2] * a_velocity[2] > 0:
             if ego_velocity[2] * (ego_position[2] - a_position[2]) < 0:
                 laSD = 1 / 2 * (
-                    abs(pow(ego_velocity[2], 2) / ego_acc[2] - pow(a_velocity[2], 2) / agent_brake_acc[2])) + abs(ego_velocity[2]) * reaction_time
+                    abs(pow(ego_velocity[2], 2) / ego_brake_acc[2] - pow(a_velocity[2], 2) / agent_brake_acc[2])) + abs(ego_velocity[2]) * reaction_time
             else: 
                 laSD = 1 / 2 * (
-                    abs(pow(ego_velocity[2], 2) / ego_acc[2] - pow(a_velocity[2], 2) / agent_brake_acc[2])) + abs(a_velocity[2]) * reaction_time
+                    abs(pow(ego_velocity[2], 2) / ego_brake_acc[2] - pow(a_velocity[2], 2) / agent_brake_acc[2])) + abs(a_velocity[2]) * reaction_time
         else:
             laSD = 1 / 2 * (
-                abs(pow(ego_velocity[2], 2) / ego_acc[2] + pow(a_velocity[2], 2) / agent_brake_acc[2]))
+                abs(pow(ego_velocity[2], 2) / ego_brake_acc[2] + pow(a_velocity[2], 2) / agent_brake_acc[2]))
 
         laProC = calculate_collision_probability(laSD, abs(ego_position[2] - a_position[2]))
         laProC_list.append(laProC)
@@ -224,6 +270,8 @@ def calculate_measures(npc_state, ego_state, isNpcVehicle):
         proC = (laProC + loProC) / 2
         
         proC_list.append(proC)
+        
+        print("Sub ProC: ", proC)
 
     # calculate collision probability
     proC_dt = max(proC_list) + (1 - max(proC_list)) * min(proC_list)

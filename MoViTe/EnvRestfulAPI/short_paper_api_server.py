@@ -38,9 +38,9 @@ sim = lgsvl.Simulator(os.environ.get(
 DREAMVIEW = None
 collision_object = None
 probability = 0
-ETTC = 1000
+ETTC = 100
 DTO = 100000
-JERK = 10000
+JERK = 100
 time_step_collision_object = None
 sensors = None
 DESTINATION = None
@@ -181,7 +181,7 @@ def calculate_measures_thread(npc_state, ego_state, isNpcVehicle, TTC_list,
 # calculate metrics
 def calculate_metrics(agents, ego):
     global probability
-    global TTC
+    global ETTC
     global DTO
     global JERK
     global collision_tag
@@ -209,17 +209,22 @@ def calculate_metrics(agents, ego):
     i = 0
     time_step = 0.5
 
-    for i in range (0, int(observation_time / time_step)):
+    while i < observation_time / time_step:
         
         # check apollo's modules status from dreamview
+        # print("Checking modules status ....")
         check_modules_status()
         
         # run simulator
+        # print("Running simulator ....")
         sim.run(time_limit=time_step) 
         
         ego_acc = get_ego_acceleration()
+        print("Ego Acceleration: ", ego_acc)
         
         JERK_list.append(abs(ego_acc - prev_acc) / 0.5)
+        print("Ego JERK: ", abs(ego_acc - prev_acc) / 0.5)
+        prev_acc = ego_acc
         
         npc_state = []
         isNpcVehicle = []
@@ -233,7 +238,7 @@ def calculate_metrics(agents, ego):
 
         thread = threading.Thread(
             target=calculate_measures_thread,
-            args=(state_list, ego_state, isNpcVehicle, ETTC_list, 
+            args=(npc_state, ego_state, isNpcVehicle, ETTC_list, 
                   distance_list, probability_list, collision_tag,)
         )
 
@@ -242,12 +247,22 @@ def calculate_metrics(agents, ego):
         if collision_tag:
             collision_tag = False
 
+        i += 1
+        
+        if i == int(observation_time / time_step):
+            time.sleep(0.5)
+
     # if SAVE_SCENARIO:
     collision_type, collision_speed_, collision_uid_ = get_collision_info()
     if collision_speed_ == -1:
         collision_speed_ = speed
+        
+    print("ETTC List: ", ETTC_list)
+    print("DTO List: ", distance_list)
+    print("JERK List: ", JERK_list)
+    print("PROC List: ", probability_list)
     
-    TTC = round(min(ETTC_list), 6)
+    ETTC = round(min(ETTC_list), 6)
     DTO = round(min(distance_list), 6)
     JERK = round(max(JERK_list), 6)
     probability = round(max(probability_list), 6)
@@ -334,25 +349,48 @@ def load_scene():
 
     EGO = None
     state = lgsvl.AgentState()
-    # roadTransform_start = open(
-    #     'Transform/transform-road' + road_num + '-start', 'rb')
-    # state.transform = torch.load(
-    #     './Transform/{}.pt'.format("road" + "4" + "_start"))
-    
-    with open('position.pkl') as file:
-        map_pos = pickle.load(file)
-        
-    state.transform.position.x = map_pos[scene][road_num]['init_pos']['x']
-    state.transform.position.y = map_pos[scene][road_num]['init_pos']['y']
-    state.transform.position.z = map_pos[scene][road_num]['init_pos']['z']
-    state.transform.rotation.y = map_pos[scene][road_num]['init_pos']['ry']
-    state.transform.rotation.x = map_pos[scene][road_num]['init_pos']['rx']
+    roadTransform_start = open(
+        'Transform/transform-road' + road_num + '-start', 'rb')
+    state.transform = torch.load(
+        './Transform/{}.pt'.format("road" + "4" + "_start"))
+    if road_num == '1':
+        if scene == 'bd77ac3b-fbc3-41c3-a806-25915c777022':
+            state.transform.position.x = 213.8
+            state.transform.position.y = 35.7
+            state.transform.position.z = 122.8
+            state.transform.rotation.y = 49
+            state.transform.rotation.x = 0
+        elif scene == '12da60a7-2fc9-474d-a62a-5cc08cb97fe8':
+            state.transform.position.x = -768.9
+            state.transform.position.y = 10.2
+            state.transform.position.z = 224.1
+            state.transform.rotation.y = 81
+            state.transform.rotation.x = 0
+        else:
+            state.transform.position.x = -40.3
+            state.transform.position.y = -1.4
+            state.transform.position.z = -11.8
+            state.transform.rotation.y = 105
+            state.transform.rotation.x = 1
+    elif road_num == '2':
+        state.transform.position.x = -442.1
+        state.transform.position.y = 10.2
+        state.transform.position.z = -65.1
+        state.transform.rotation.y = 170
+        state.transform.rotation.x = 0
+    elif road_num == '3':
+        state.transform.position.x = -62.7
+        state.transform.position.y = 10.2
+        state.transform.position.z = -110.2
+        state.transform.rotation.y = 224
+        state.transform.rotation.x = 0
 
     forward = lgsvl.utils.transform_to_forward(state.transform)
 
     state.velocity = 3 * forward
 
-    EGO = sim.add_agent("8e776f67-63d6-4fa3-8587-ad00a0b41034", lgsvl.AgentType.EGO, state)
+    EGO = sim.add_agent("8e776f67-63d6-4fa3-8587-ad00a0b41034",
+                        lgsvl.AgentType.EGO, state)
     EGO.connect_bridge(os.environ.get("BRIDGE_HOST", APOLLO_HOST), BRIDGE_PORT)
     
     DREAMVIEW = lgsvl.dreamview.Connection(sim, EGO, APOLLO_HOST, str(DREAMVIEW_PORT))
@@ -362,10 +400,23 @@ def load_scene():
 
     data = {'road_num': road_num}
 
-    requests.post(
-        f"http://localhost:8933/LGSVL/SetDestination?des_x={map_pos[scene][road_num]['des_pos']['x']}" 
-        + f"&des_y={map_pos[scene][road_num]['des_pos']['y']}&des_z={map_pos[scene][road_num]['des_pos']['z']}")
+    if road_num == '1':
+        if scene == 'bd77ac3b-fbc3-41c3-a806-25915c777022':
+            requests.post(
+                "http://localhost:8933/LGSVL/SetDestination?des_x=338.4&des_y=35.5&des_z=286.9")
 
+        elif scene == '12da60a7-2fc9-474d-a62a-5cc08cb97fe8':
+            requests.post(
+                "http://localhost:8933/LGSVL/SetDestination?des_x=-494.3&des_y=10.2&des_z=294.7")
+        else:
+            requests.post(
+                "http://localhost:8933/LGSVL/SetDestination?des_x=348.2&des_y=-7.5&des_z=-64.4")
+    elif road_num == '2':
+        requests.post(
+            "http://localhost:8933/LGSVL/SetDestination?des_x=-384.6&des_y=10.2&des_z=-357.8")
+    elif road_num == '3':
+        requests.post(
+            "http://localhost:8933/LGSVL/SetDestination?des_x=-208.2&des_y=10.2&des_z=-181.6")
     print(road_num)
 
     roadTransform_start.close()
@@ -986,56 +1037,56 @@ def check_modules_status():
     
     stop = False
     
-    stop_time = 0
+    stop_time = 300
     
     if modules_status['Localization'] == False:
         print(20*'*', 'LOCALIZATION STOPPED', 20*'*')
         DREAMVIEW.enable_module('Localization')
         print(20*'*', 'LOCALIZATION ENABLED', 20*'*')
         stop = True
-        stop_time = max(120, stop_time)
+        # stop_time = max(120, stop_time)
         
     if modules_status['Prediction'] == False:
         print(20*'*', 'PREDICTION STOPPED', 20*'*')
         DREAMVIEW.enable_module('Prediction')
         print(20*'*', 'PREDICTION ENABLED', 20*'*')
         stop = True
-        stop_time = max(120, stop_time)
+        # stop_time = max(120, stop_time)
         
     if modules_status['Transform'] == False:
         print(20*'*', 'TRANSFORM STOPPED', 20*'*')
         DREAMVIEW.enable_module('Transform')
         print(20*'*', 'TRANSFORM ENABLED', 20*'*')
         stop = True
-        stop_time = max(120, stop_time)
+        # stop_time = max(120, stop_time)
         
     if modules_status['Control'] == False:
         print(20*'*', 'CONTROL STOPPED', 20*'*')
         DREAMVIEW.enable_module('Control')
         print(20*'*', 'CONTROL ENABLED', 20*'*')
         stop = True
-       stop_time = max(120, stop_time)
+    #    stop_time = max(120, stop_time)
         
     if modules_status['Perception'] == False:
         print(20*'*', 'PERCEPTION STOPPED', 20*'*')
         DREAMVIEW.enable_module('Perception')
         print(20*'*', 'PERCEPTION ENABLED', 20*'*')
         stop = True
-        stop_time = max(300, stop_time)
+        # stop_time = max(300, stop_time)
         
     if modules_status['Routing'] == False:
         print(20*'*', 'ROUTING STOPPED', 20*'*')
         DREAMVIEW.enable_module('Routing')
         print(20*'*', 'ROUTING ENABLED', 20*'*')
         stop = True
-        stop_time = max(120, stop_time)
+        # stop_time = max(120, stop_time)
         
     if modules_status['Planning'] == False:
         print(20*'*', 'PLANNING STOPPED', 20*'*')
         DREAMVIEW.enable_module('Planning')
         print(20*'*', 'PLANNING ENABLED', 20*'*')
         stop = True
-        stop_time = max(120, stop_time)
+        # stop_time = max(120, stop_time)
         
     if stop:
         time.sleep(stop_time)
@@ -1206,7 +1257,7 @@ def get_c_probability():
 def get_distance_to_obstacles():
     global DTO
     dto = DTO
-    DTO = 0
+    DTO = 100000
     return str(dto)
 
 
@@ -1214,14 +1265,14 @@ def get_distance_to_obstacles():
 def get_estimated_time_to_collision():
     global ETTC
     ettc = ETTC
-    ETTC = 0
+    ETTC = 100
     return str(ettc)
 
 @app.route('/LGSVL/Status/Jerk', methods=['GET'])
 def get_jerk():
     global JERK
     jerk = JERK
-    JERK = 0
+    JERK = 100
     return str(jerk)
 
 
