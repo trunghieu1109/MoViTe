@@ -168,10 +168,10 @@ def calculate_measures(npc_state, ego_state, isNpcVehicle):
     
     ego_position, ego_velocity, ego_speed, ego_brake_acc = get_vehicle_info(ego_state, True)
 
-    print("EGO position: ", ego_position)
-    print("EGO velocity: ", ego_velocity)
-    print("EGO speed: ", ego_speed)
-    print("EGO brake acc: ", ego_brake_acc)
+    # print("EGO position: ", ego_position)
+    # print("EGO velocity: ", ego_velocity)
+    # print("EGO speed: ", ego_speed)
+    # print("EGO brake acc: ", ego_brake_acc)
 
     trajectory_ego_k, trajectory_ego_b = get_line(ego_position, ego_velocity)
 
@@ -196,7 +196,7 @@ def calculate_measures(npc_state, ego_state, isNpcVehicle):
         dis = get_distance(ego_position, a_position[0], a_position[2])
         distance = dis if dis <= distance else distance
         
-        print("Sub distance: ", distance)
+        # print("Sub distance: ", distance)
 
         # calculate ETTC
         same_lane, _, ttc = judge_same_line(ego_position, ego_speed, ego_velocity, a_position, agent_speed, trajectory_ego_k, trajectory_agent_k)
@@ -231,7 +231,7 @@ def calculate_measures(npc_state, ego_state, isNpcVehicle):
         if abs(time_ego - time_agent) < 1:
             ETTC = min(ETTC, (time_ego + time_agent) / 2)
             
-        print("Sub ETTC: ", ETTC)
+        # print("Sub ETTC: ", ETTC)
 
         # Calculate LoSD
         loSD = 100000
@@ -271,7 +271,7 @@ def calculate_measures(npc_state, ego_state, isNpcVehicle):
         
         proC_list.append(proC)
         
-        print("Sub ProC: ", proC)
+        # print("Sub ProC: ", proC)
 
     # calculate collision probability
     proC_dt = max(proC_list) + (1 - max(proC_list)) * min(proC_list)
