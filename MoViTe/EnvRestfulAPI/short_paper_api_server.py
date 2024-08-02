@@ -55,6 +55,7 @@ NPC_QUEUE = queue.Queue(maxsize=10)
 collision_speed = 0  # 0 indicates there is no collision occurred.
 collision_uid = "No collision"
 prev_acc = 0
+offset = 9 # add time offset
 
 speed_list = []
 
@@ -220,10 +221,10 @@ def calculate_metrics(agents, ego):
         sim.run(time_limit=time_step) 
         
         ego_acc = get_ego_acceleration()
-        print("Ego Acceleration: ", ego_acc)
+        # print("Ego Acceleration: ", ego_acc)
         
         JERK_list.append(abs(ego_acc - prev_acc) / 0.5)
-        print("Ego JERK: ", abs(ego_acc - prev_acc) / 0.5)
+        # print("Ego JERK: ", abs(ego_acc - prev_acc) / 0.5)
         prev_acc = ego_acc
         
         npc_state = []
@@ -334,6 +335,7 @@ def load_scene():
     global prev_lane_id
     global DREAMVIEW
     global prev_acc
+    global offset
     
     prev_acc = 0
     prev_lane_id = ""
@@ -397,7 +399,7 @@ def load_scene():
 
     sensors = EGO.get_sensors()
     sim.get_agents()[0].on_collision(on_collision)
-
+    sim.set_time_of_day((10 + offset) % 24, fixed=True)
     data = {'road_num': road_num}
 
     if road_num == '1':
@@ -703,14 +705,16 @@ def time_of_day():
     :return:
     """
     global REALISTIC
+    global offset
+    
     time = request.args.get('time_of_day')
-    day_time = 10  # initial time: 10
+    day_time = (10 + offset) % 24  # initial time: 10
     if time == 'Morning':
-        day_time = 10
+        day_time = (10 + offset) % 24
     elif time == 'Noon':
-        day_time = 14
+        day_time = (14 + offset) % 24 
     elif time == 'Evening':
-        day_time = 20
+        day_time = (20 + offset) % 24
     sim.set_time_of_day(day_time, fixed=True)
     REALISTIC = False
     print('realistic constraints: ', REALISTIC)
@@ -1099,6 +1103,7 @@ def get_environment_state():
     global next_lane_waypoint
     global current_signals
     global signals_map
+    global offset
 
     agents = sim.get_agents()
 
@@ -1111,7 +1116,7 @@ def get_environment_state():
     state_dict = {'x': position.x, 'y': position.y, 'z': position.z,
                   'rx': rotation.x, 'ry': rotation.y, 'rz': rotation.z,
                   'rain': weather.rain, 'fog': weather.fog, 'wetness': weather.wetness,
-                  'timeofday': sim.time_of_day, 'signal': interpreter_signal(signal.current_state),
+                  'timeofday': (sim.time_of_day - offset + 24) % 24, 'signal': interpreter_signal(signal.current_state),
                   'speed': speed,}
 
     return json.dumps(state_dict)
