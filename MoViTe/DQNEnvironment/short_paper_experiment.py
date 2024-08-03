@@ -4,9 +4,11 @@ import requests
 import pandas as pd
 import time
 import numpy as np
+import torch 
+from short_paper_training_model import DQN
 import json
+import os
 import math
-import os 
 
 ETTC_threshold = 7 # (s)
 DTO_threshold = 10 # (m)
@@ -34,6 +36,7 @@ def execute_action(action_id):
         
     return proC_list, DTO_list, ETTC_list, JERK_list, obstacle_uid
 
+
 latitude_space = []
 check_num = 5  # here depend on observation time: 2s->10, 4s->6, 6s->
 latitude_position = 0
@@ -41,13 +44,18 @@ latitude_position = 0
 position_space = []
 position_space_size = 0
 
+previous_weather_and_time_step = -5
+
+per_confi = None
+pred_confi = None
+
 
 def judge_done():
-    global latitude_position
     global position_space_size
     global position_space
     judge = False
     position = requests.get("http://localhost:8933/LGSVL/Status/EGOVehicle/Position").json()
+    print("Ego's position: ", position)
     position_space.append((position['x'], position['y'], position['z']))
     position_space_size = (position_space_size + 1) % check_num
     if len(position_space) == 5:
@@ -57,15 +65,17 @@ def judge_done():
         dis = pow(
             pow(start_pos[0] - end_pos[0], 2) + pow(start_pos[1] - end_pos[1], 2) + pow(start_pos[2] - end_pos[2], 2),
             0.5)
-        
+            
         dis2 = start_pos[1] - end_pos[1]
-        
-        if dis < 0.15:
+            
+        if dis < 3:
             judge = True
             
-        if dis2 > 25:
+        if abs(dis2) > 25:
             judge = True
+            
     return judge
+
 
 
 # Execute action and get return
@@ -83,7 +93,7 @@ def calculate_reward(action_id):
     global JERK_threshold
     
     proC_list, DTO_list, ETTC_list, JERK_list, obstacle_uid = execute_action(action_id)
-    observation = get_environment_state()
+    observation = None
     action_reward = 0
     
     # Collision Probability Reward
@@ -164,8 +174,8 @@ def calculate_reward(action_id):
     return observation, action_reward, collision_probability, DTO, ETTC, JERK, episode_done, proC_list, DTO_list, ETTC_list, JERK_list, obstacle_uid
 
 
-
 def get_environment_state():
+    
     global per_confi
     global pred_confi
     
@@ -184,37 +194,68 @@ def get_environment_state():
     state[9] = a['ry']
     state[10] = a['rz']
     state[11] = a['speed']
-    
+
     return state
 
-requests.post("http://localhost:8933/LGSVL/LoadScene?scene=aae03d2a-b7ca-4a88-9e41-9035287a12cc&road_num=" + '1')
-requests.post("http://localhost:8933/LGSVL/SetObTime?observation_time=6")
-
-action_space = get_action_space()['command']
-action_space_size = action_space['num']
 
 for loop in range(0, 5):
-    title = ["Episode", "Step", "State", "Action", "Collision_Probability", "DTO", "ETTC", "JERK", 
+    requests.post("http://localhost:8933/LGSVL/LoadScene?scene=12da60a7-2fc9-474d-a62a-5cc08cb97fe8&road_num=" + '3')
+    requests.post("http://localhost:8933/LGSVL/SetObTime?observation_time=6")
+
+    action_space = get_action_space()['command']
+    action_space_size = action_space['num']
+
+    print("Number of actions: ", action_space_size)
+
+    current_eps = str(400)
+    road_num = str(3)
+
+    file_name = str(int(time.time()))
+
+    dqn = DQN()
+    
+    folder_name = 'short_paper_sanfrancisco_road3'
+    
+    log_path = '../ExperimentData/Random-or-Non-random Analysis/{}/'.format(folder_name)
+    model_path = './model/{}/'.format(folder_name)
+    
+    if not os.path.isdir(log_path):
+        print("Create dir", log_path)
+        os.makedirs(log_path)
+
+
+    dqn.eval_net.load_state_dict(torch.load(model_path + 'eval_net_' + current_eps + '_road' + road_num + '.pt'))
+    dqn.target_net.load_state_dict(torch.load(model_path + 'target_net_' + current_eps + '_road' + road_num + '.pt'))
+
+    title = ["Episode", "State", "Action", "Choosing_Type", "Collision_Probability", "DTO", "ETTC", "JERK", 
             "Collision_uid", "Collision_Probability_Per_Step", "DTO_list", "ETTC_list", "JERK_list", "Done"]
     df_title = pd.DataFrame([title])
-    file_name = str(int(time.time()))
-    
-    file_path = '../ExperimentData/Random-or-Non-random Analysis/Data_Random_BorregasAve-short_paper/'
-    
-    if not os.path.isdir(file_path):
-        print("Create dir", file_path)
-        os.makedirs(file_path)
-    
-    df_title.to_csv(file_path + 'random_6s_road1_' + file_name + '_dis_1' + '.csv', mode='w', header=False, index=None)
+    df_title.to_csv(log_path + 'dqn_6s_road3_' + current_eps + 'eps_' + file_name + '_0.2eps.csv', mode='w', header=False, index=None)
 
     iteration = 0
     step = 0
     print("Start episode 0")
+    state_ = []
+    action_ = []
+    type_ = []
+    probability_ = []
+    DTO_ = []
+    ETTC_ = []
+    JERK_ = []
+    collision_uid_ = []
+    collision_probability_per_step_ = []
+    DTO_list_ = []
+    ETTC_list_ = []
+    JERK_list_ = []
+    done_ = []
+    isCollision = False
+    
     while True:
         # Random select action to execute
 
         s = get_environment_state()
-        
+        current_step = step
+            
         retry = True
         
         while(retry):
@@ -222,24 +263,82 @@ for loop in range(0, 5):
             retry = False
         
             try:
-                api_id = random.randint(0, action_space_size - 1)
-                _, _, probability, DTO, ETTC, JERK, done, collision_probability_per_step, DTO_list, ETTC_list, JERK_list, collision_uid, = calculate_reward(api_id)
+                action, type = dqn.choose_action(s, current_step, previous_weather_and_time_step)
+                _, _, probability, DTO, ETTC, JERK, done, collision_probability_per_step, DTO_list, ETTC_list, JERK_list, collision_uid, = calculate_reward(action)
             except json.JSONDecodeError as e:
-                print(e)
-                retry = True
+                print(e)    
+                retry = True 
 
-        print('api_id, probability, DTO, ETTC, JERK, done: ', api_id, probability, DTO, ETTC, JERK,  done)
-        pd.DataFrame([[iteration, step, s, api_id, probability, DTO, ETTC, JERK, collision_uid, collision_probability_per_step, DTO_list, ETTC_list, JERK_list, done]]).to_csv(
-            file_path + 'random_6s_road1_' + file_name + '_dis_1' + '.csv',
-            mode='a',
-            header=False, index=None)
+        if 0 <= action and action <= 12:
+            previous_weather_and_time_step = step
+
+        print('api_id, probability, DTO, ETTC, JERK, done: ', action, probability, DTO, ETTC, JERK,  done)
+        # pd.DataFrame([[action, probability, collision_probability_per_step, done]]).to_csv('experiment_data/dqn_record_' + file_name + '.csv', mode='a', header=False,
+        #                                                 index=None)
+        
+        if probability == 1.0:
+            isCollision = True
+        
+        state_.append(s)
+        action_.append(action)
+        type_.append(type)
+        probability_.append(probability)
+        DTO_.append(DTO)
+        ETTC_.append(ETTC)
+        JERK_.append(JERK)
+        collision_uid_.append(collision_uid)
+        collision_probability_per_step_.append(collision_probability_per_step)
+        DTO_list_.append(DTO_list)
+        ETTC_list_.append(ETTC_list)
+        JERK_list_.append(JERK_list)
+        done_.append(done)
 
         step += 1
         if done:
             # break
-            requests.post("http://localhost:8933/LGSVL/LoadScene?scene=aae03d2a-b7ca-4a88-9e41-9035287a12cc&road_num=" + '1')
-            iteration += 1
+            # requests.post("http://localhost:8933/LGSVL/LoadScene?scene=aae03d2a-b7ca-4a88-9e41-9035287a12cc&road_num=" + '1')
+            requests.post("http://localhost:8933/LGSVL/LoadScene?scene=12da60a7-2fc9-474d-a62a-5cc08cb97fe8&road_num=" + '3')
+
+            print("Length of episode: ", len(state_))
+            if len(state_) <= 5:
+                if not isCollision:
+                    print("Restart this episode")
+                else:
+                    print("Episode complete")
+                    for iter in range(0, len(state_)):
+                        pd.DataFrame([[iteration, state_[iter], action_[iter], type_[iter], probability_[iter], DTO_[iter], ETTC_[iter], JERK_[iter], collision_uid_[iter], 
+                                        collision_probability_per_step_[iter], DTO_list_[iter], ETTC_list_[iter], JERK_list_[iter], done_[iter]]]).to_csv(
+                            log_path + 'dqn_6s_road3_' + current_eps + 'eps_' + file_name + '_0.2eps.csv',
+                            mode='a',
+                            header=False, index=None)
+                    iteration += 1
+            else:
+                print("Episode complete")
+                for iter in range(0, len(state_)):
+                    pd.DataFrame([[iteration, state_[iter], action_[iter], type_[iter], probability_[iter], DTO_[iter], ETTC_[iter], JERK_[iter], collision_uid_[iter], 
+                                    collision_probability_per_step_[iter], DTO_list_[iter], ETTC_list_[iter], JERK_list_[iter], done_[iter]]]).to_csv(
+                        log_path + 'dqn_6s_road3_' + current_eps + 'eps_' + file_name + '_0.2eps.csv',
+                        mode='a',
+                        header=False, index=None)
+                iteration += 1
+                
+            state_ = []
+            action_ = []
+            type_ = []
+            probability_ = []
+            DTO_ = []
+            ETTC_ = []
+            JERK_ = []
+            collision_uid_ = []
+            collision_probability_per_step_ = []
+            DTO_list_ = []
+            ETTC_list_ = []
+            JERK_list_ = []
+            done_ = []
+            isCollision = False
+            current_step = 0
             step = 0
+            previous_weather_and_time_step = -5
             print("Start episode ", iteration)
             if iteration == 16:
                 break
