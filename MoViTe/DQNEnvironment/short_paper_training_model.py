@@ -330,7 +330,8 @@ def calculate_reward(action_id):
     if 0 <= DTO <= DTO_threshold:
         DTO_reward = 1 - DTO / DTO_threshold
     else:
-        DTO_reward = -1
+        if collision_probability < 0.2:
+            DTO_reward = -1
         
     print("Distance to obstacles: ", DTO)
     print("DTO Reward: ", DTO_reward)
@@ -346,7 +347,8 @@ def calculate_reward(action_id):
     if 0 < ETTC <= ETTC_threshold:
         ETTC_reward = 1 - ETTC / ETTC_threshold
     else:
-        ETTC_reward = -1
+        if collision_probability < 0.2:
+            ETTC_reward = -1
         
     print("Estimated time to collision: ", ETTC)
     print("ETTC Reward: ", ETTC_reward)
@@ -364,7 +366,8 @@ def calculate_reward(action_id):
     if JERK > JERK_threshold:
         JERK_reward = 2 / (1 + math.exp(-(JERK - JERK_threshold))) - 1
     else:
-        JERK_reward = -1
+        if collision_probability < 0.2:
+            JERK_reward = -1
         
     print("JERK Reward: ", JERK_reward)
 
