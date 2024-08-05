@@ -328,7 +328,7 @@ def calculate_reward(action_id):
     DTO_reward = 0
     
     if 0 <= DTO <= DTO_threshold:
-        DTO_reward = -math.log(DTO / DTO_threshold)
+        DTO_reward = 1 - DTO / DTO_threshold
     else:
         DTO_reward = -1
         
@@ -344,7 +344,7 @@ def calculate_reward(action_id):
     ETTC_reward = 0
     
     if 0 < ETTC <= ETTC_threshold:
-        ETTC_reward = -math.log(ETTC / ETTC_threshold)
+        ETTC_reward = 1 - ETTC / ETTC_threshold
     else:
         ETTC_reward = -1
         
@@ -362,13 +362,13 @@ def calculate_reward(action_id):
     print("JERK: ", JERK)
     
     if JERK > JERK_threshold:
-        JERK_reward = math.exp((JERK - 0) / (10 - 0)) - 1
+        JERK_reward = 2 / (1 + math.exp(-(JERK - JERK_threshold))) - 1
     else:
         JERK_reward = -1
         
     print("JERK Reward: ", JERK_reward)
 
-    action_reward = collision_reward + DTO_reward / 3 + JERK_reward / 3 + ETTC_reward / 3
+    action_reward = collision_reward + DTO_reward * 0.4 + JERK_reward * 0.2 + ETTC_reward * 0.4
             
     return observation, action_reward, collision_probability, DTO, ETTC, JERK, episode_done, proC_list, DTO_list, ETTC_list, JERK_list, obstacle_uid
 

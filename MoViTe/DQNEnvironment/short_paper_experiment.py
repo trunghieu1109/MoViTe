@@ -8,7 +8,6 @@ import torch
 from short_paper_training_model import DQN
 import json
 import os
-import math
 
 ETTC_threshold = 7 # (s)
 DTO_threshold = 10 # (m)
@@ -51,11 +50,11 @@ pred_confi = None
 
 
 def judge_done():
+    global latitude_position
     global position_space_size
     global position_space
     judge = False
     position = requests.get("http://localhost:8933/LGSVL/Status/EGOVehicle/Position").json()
-    print("Ego's position: ", position)
     position_space.append((position['x'], position['y'], position['z']))
     position_space_size = (position_space_size + 1) % check_num
     if len(position_space) == 5:
@@ -65,17 +64,15 @@ def judge_done():
         dis = pow(
             pow(start_pos[0] - end_pos[0], 2) + pow(start_pos[1] - end_pos[1], 2) + pow(start_pos[2] - end_pos[2], 2),
             0.5)
-            
+        
         dis2 = start_pos[1] - end_pos[1]
-            
-        if dis < 3:
+        
+        if dis < 0.15:
             judge = True
             
         if abs(dis2) > 25:
             judge = True
-            
     return judge
-
 
 
 # Execute action and get return
@@ -93,7 +90,7 @@ def calculate_reward(action_id):
     global JERK_threshold
     
     proC_list, DTO_list, ETTC_list, JERK_list, obstacle_uid = execute_action(action_id)
-    observation = None
+    observation = get_environment_state()
     action_reward = 0
     
     # Collision Probability Reward
@@ -129,7 +126,7 @@ def calculate_reward(action_id):
     DTO_reward = 0
     
     if 0 <= DTO <= DTO_threshold:
-        DTO_reward = -math.log(DTO / DTO_threshold)
+        DTO_reward = 1 - DTO / DTO_threshold
     else:
         DTO_reward = -1
         
@@ -145,7 +142,7 @@ def calculate_reward(action_id):
     ETTC_reward = 0
     
     if 0 < ETTC <= ETTC_threshold:
-        ETTC_reward = -math.log(ETTC / ETTC_threshold)
+        ETTC_reward = 1 - ETTC / ETTC_threshold
     else:
         ETTC_reward = -1
         
@@ -163,13 +160,13 @@ def calculate_reward(action_id):
     print("JERK: ", JERK)
     
     if JERK > JERK_threshold:
-        JERK_reward = math.exp((JERK - 0) / (10 - 0)) - 1
+        JERK_reward = 2 / (1 + math.exp(-(JERK - JERK_threshold))) - 1
     else:
         JERK_reward = -1
         
     print("JERK Reward: ", JERK_reward)
 
-    action_reward = collision_reward + DTO_reward / 3 + JERK_reward / 3 + ETTC_reward / 3
+    action_reward = collision_reward + DTO_reward * 0.4 + JERK_reward * 0.2 + ETTC_reward * 0.4
             
     return observation, action_reward, collision_probability, DTO, ETTC, JERK, episode_done, proC_list, DTO_list, ETTC_list, JERK_list, obstacle_uid
 
@@ -207,7 +204,7 @@ for loop in range(0, 5):
 
     print("Number of actions: ", action_space_size)
 
-    current_eps = str(400)
+    current_eps = str(200)
     road_num = str(3)
 
     file_name = str(int(time.time()))
@@ -297,7 +294,7 @@ for loop in range(0, 5):
         if done:
             # break
             # requests.post("http://localhost:8933/LGSVL/LoadScene?scene=aae03d2a-b7ca-4a88-9e41-9035287a12cc&road_num=" + '1')
-            requests.post("http://localhost:8933/LGSVL/LoadScene?scene=12da60a7-2fc9-474d-a62a-5cc08cb97fe8&road_num=" + '3')
+            requests.post("http://localhost:8933/LGSVL/LoadScene?scene=12da60a7-2fc9-474d-a62a-5cc08cb97fe8s&road_num=" + '3')
 
             print("Length of episode: ", len(state_))
             if len(state_) <= 5:
@@ -337,7 +334,6 @@ for loop in range(0, 5):
             done_ = []
             isCollision = False
             current_step = 0
-            step = 0
             previous_weather_and_time_step = -5
             print("Start episode ", iteration)
             if iteration == 16:

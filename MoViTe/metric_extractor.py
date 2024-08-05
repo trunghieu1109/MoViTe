@@ -2,6 +2,7 @@ import numpy as np
 import pandas as pd
 import argparse
 import matplotlib.pyplot as plt
+import math
 
 obs_time = 6.0
 
@@ -24,6 +25,9 @@ def metrics_extract(exp_file):
     
     per_info = []
     reward_info = []
+    DTO_list = []
+    ETTC_list = []
+    JERK_list = []
     
     prev_position = np.array([0, 0, 0])
     
@@ -43,8 +47,36 @@ def metrics_extract(exp_file):
         state = row['State'][1:-1].split(",")[0].split(" ")
         state_ = [s for s in state if s != ""]
         uid = row["Collision_uid"]
+        DTO = float(row['DTO'])
+        if DTO < float(10):
         # type = row["Choosing_Type"]
+            DTO_list.append(-math.log(DTO/10))
+        else:
+            # DTO_list.append(-1)
+            pass
+        # if DTO < float(10):
+        #     DTO_list.append(DTO)
         
+        ETTC = float(row['ETTC'])
+        if ETTC < float(7):
+        # type = row["Choosing_Type"]
+            ETTC_list.append(-math.log(ETTC/10))
+        else:
+            # ETTC_list.append(-1)
+            pass
+        # if ETTC < float(100):
+        #     ETTC_list.append(ETTC)
+        
+        JERK = float(row['JERK'])
+        if JERK > float(5):
+        # type = row["Choosing_Type"]
+            JERK_list.append(math.exp((JERK - 0) / (10 - 0)) - 1)
+        else:
+            # JERK_list.append(-1)
+            pass
+        
+        # if JERK > float(5):
+        #     JERK_list.append(JERK)
         per_in = None
  
         freq[int(action)] += 1
@@ -117,11 +149,14 @@ def metrics_extract(exp_file):
     
     # freq *= 100
     
-    # plt.scatter(per_info, reward_info, marker='o', color='b')
-    # plt.xlabel('Perception Information')
-    # plt.ylabel('Reward')
-    # plt.title('Perception Information vs Reward')
-    # plt.show()
+    # DTO_list_ = np.array(DTO_list)
+    range_ = range(len(ETTC_list))
+    
+    plt.plot(range_, ETTC_list, marker='o')
+    plt.xlabel('Step')
+    plt.ylabel('ETTC Reward')
+    plt.title('ETTC')
+    plt.show()
     
     
 if __name__ == "__main__":
