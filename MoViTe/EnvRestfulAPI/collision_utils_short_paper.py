@@ -152,10 +152,16 @@ def get_brake_acc(velocity, speed, isVehicle):
 
 def get_vehicle_info(state, isVehicle):
     transform = state.transform
-    speed = state.speed
+    speed = state.speed    
     
     position = np.array([transform.position.x, transform.position.y, transform.position.z])
     velocity = np.array([state.velocity.x, state.velocity.y, state.velocity.z])
+    
+    # print("Npc velocity: ", velocity)
+    
+    if not isVehicle:
+        # print(velocity)
+        speed = math.sqrt(velocity[0] ** 2 + velocity[1] ** 2 + velocity[2] ** 2)
     
     moving_direction = velocity / max(speed, 0.001)
     
@@ -167,11 +173,6 @@ def get_vehicle_info(state, isVehicle):
 def calculate_measures(npc_state, ego_state, isNpcVehicle):
     
     ego_position, ego_velocity, ego_speed, ego_brake_acc = get_vehicle_info(ego_state, True)
-
-    # print("EGO position: ", ego_position)
-    # print("EGO velocity: ", ego_velocity)
-    # print("EGO speed: ", ego_speed)
-    # print("EGO brake acc: ", ego_brake_acc)
 
     trajectory_ego_k, trajectory_ego_b = get_line(ego_position, ego_velocity)
 
@@ -197,6 +198,8 @@ def calculate_measures(npc_state, ego_state, isNpcVehicle):
         distance = dis if dis <= distance else distance
         
         # print("Sub distance: ", distance)
+
+        # print("Speed: ", agent_speed)
 
         # calculate ETTC
         same_lane, _, ttc = judge_same_line(ego_position, ego_speed, ego_velocity, a_position, agent_speed, trajectory_ego_k, trajectory_agent_k)

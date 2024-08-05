@@ -174,6 +174,7 @@ class DQN(object):
         
         if 0 <= action and action <= 12:
             self.previous_weather_and_time = action    
+        
         return action, choose
 
     def store_transition(self, s, a, r, s_, done):

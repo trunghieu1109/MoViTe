@@ -55,7 +55,8 @@ NPC_QUEUE = queue.Queue(maxsize=10)
 collision_speed = 0  # 0 indicates there is no collision occurred.
 collision_uid = "No collision"
 prev_acc = 0
-offset = 9 # add time offset
+time_offset = 9 # add time offset
+pedes_prev_pos = {}
 
 speed_list = []
 
@@ -193,6 +194,7 @@ def calculate_metrics(agents, ego):
     global collision_speed
     global collision_uid
     global prev_acc
+    global pedes_prev_pos
 
     collision_object = None
     collision_speed = 0  # 0 indicates there is no collision occurred.
@@ -231,9 +233,26 @@ def calculate_metrics(agents, ego):
         isNpcVehicle = []
         for j in range(1, len(agents)):
             state_ = agents[j].state
-            npc_state.append(state_)
             isNpc = (isinstance(agents[j], NpcVehicle))
             isNpcVehicle.append(isNpc)
+            
+            if not isNpc:
+                pedes_uid = agents[j].uid
+                # print("Pedes_uid: ", pedes_uid)
+                
+                if pedes_uid in pedes_prev_pos:
+                    state_.velocity.x = (state_.transform.position.x - pedes_prev_pos[pedes_uid][0]) / 0.5
+                    state_.velocity.y = (state_.transform.position.y - pedes_prev_pos[pedes_uid][1]) / 0.5
+                    state_.velocity.z = (state_.transform.position.z - pedes_prev_pos[pedes_uid][2]) / 0.5
+                    
+                # state_.speed = math.sqrt(state_.velocity.x ** 2 + state_.velocity.y ** 2 + state_.velocity.z ** 2)
+                
+                # print("Updated velocity: ", state_.velocity)
+                
+                pedes_prev_pos[pedes_uid] = np.array([state_.transform.position.x, state_.transform.position.y, state_.transform.position.z])
+                # print("Pedes position: ", pedes_prev_pos[pedes_uid])
+                
+            npc_state.append(state_)
 
         ego_state = ego.state
 
@@ -335,10 +354,12 @@ def load_scene():
     global prev_lane_id
     global DREAMVIEW
     global prev_acc
-    global offset
+    global time_offset
+    global pedes_prev_pos
     
     prev_acc = 0
     prev_lane_id = ""
+    pedes_prev_pos = {}
 
     print('obTime: ', observation_time)
     scene = str(request.args.get('scene'))
@@ -399,7 +420,7 @@ def load_scene():
 
     sensors = EGO.get_sensors()
     sim.get_agents()[0].on_collision(on_collision)
-    sim.set_time_of_day((10 + offset) % 24, fixed=True)
+    sim.set_time_of_day((10 + time_offset) % 24, fixed=True)
     data = {'road_num': road_num}
 
     if road_num == '1':
@@ -705,16 +726,16 @@ def time_of_day():
     :return:
     """
     global REALISTIC
-    global offset
+    global time_offset
     
     time = request.args.get('time_of_day')
-    day_time = (10 + offset) % 24  # initial time: 10
+    day_time = (10 + time_offset) % 24  # initial time: 10
     if time == 'Morning':
-        day_time = (10 + offset) % 24
+        day_time = (10 + time_offset) % 24
     elif time == 'Noon':
-        day_time = (14 + offset) % 24 
+        day_time = (14 + time_offset) % 24 
     elif time == 'Evening':
-        day_time = (20 + offset) % 24
+        day_time = (20 + time_offset) % 24
     sim.set_time_of_day(day_time, fixed=True)
     REALISTIC = False
     print('realistic constraints: ', REALISTIC)
@@ -770,6 +791,8 @@ def add_npc_cross_road():
 def add_pedestrian_cross_road():
 
     global NPC_QUEUE
+    global pedes_prev_pos
+    
     direction = request.args.get('direction')
     ego_transform = sim.get_agents()[0].state.transform
     forward = lgsvl.utils.transform_to_forward(ego_transform)
@@ -790,13 +813,20 @@ def add_pedestrian_cross_road():
 
     generate = get_no_conflict_position(
         npc_state.transform.position, 'pedestrian')
+    
     if generate:
         name = pedestrian[random.randint(0, 8)]
         p = sim.add_agent(name, lgsvl.AgentType.PEDESTRIAN, npc_state)
+        
+        pedes_uid = p.uid
+        # print("Pedes_uid: ", pedes_uid)
+        pedes_prev_pos[pedes_uid] = np.array([npc_state.transform.position.x, npc_state.transform.position.y, npc_state.transform.position.z])
+        # print("Pedes position: ", pedes_prev_pos[pedes_uid])
+        
         p.follow(wp, loop=False)
 
         control_agents_density(p)
-
+        
     agents = sim.get_agents()
     ego = agents[0]
     return calculate_metrics(agents, ego)
@@ -1103,7 +1133,7 @@ def get_environment_state():
     global next_lane_waypoint
     global current_signals
     global signals_map
-    global offset
+    global time_offset
 
     agents = sim.get_agents()
 
@@ -1116,7 +1146,7 @@ def get_environment_state():
     state_dict = {'x': position.x, 'y': position.y, 'z': position.z,
                   'rx': rotation.x, 'ry': rotation.y, 'rz': rotation.z,
                   'rain': weather.rain, 'fog': weather.fog, 'wetness': weather.wetness,
-                  'timeofday': (sim.time_of_day - offset + 24) % 24, 'signal': interpreter_signal(signal.current_state),
+                  'timeofday': (sim.time_of_day - time_offset + 24) % 24, 'signal': interpreter_signal(signal.current_state),
                   'speed': speed,}
 
     return json.dumps(state_dict)
