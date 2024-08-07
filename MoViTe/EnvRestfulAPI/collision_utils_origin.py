@@ -267,7 +267,14 @@ def calculate_measures(state_list, ego_state, isNpcVehicle,
             # print("Distance from ego to obstacle: ", dis)
             distance = dis if dis <= distance else distance
         trajectory_agent_k, trajectory_agent_b = get_line(a_position, a_velocity)
-        agent_speed = state.speed if state.speed > 0 else 0.0001
+        
+        agent_speed = 0.0001
+        
+        if isNpcVehicle[i]:
+            agent_speed = state.speed if state.speed > 0 else 0.0001
+        else:
+            agent_speed = math.sqrt(a_velocity[0] ** 2 + a_velocity[1] ** 2 + a_velocity[2] ** 2)
+            agent_speed = max(agent_speed, 0.0001)
 
         same_lane, ego_ahead, ttc = judge_same_line(ego_position, ego_speed, ego_velocity,
                                                     a_position, state.speed, trajectory_ego_k, trajectory_agent_k)
