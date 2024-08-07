@@ -8,7 +8,7 @@ from datetime import timedelta
 import json
 import lgsvl
 import numpy as np
-from collision_utils_short_paper import pedestrian, npc_vehicle, calculate_measures
+from collision_utils_origin import pedestrian, npc_vehicle, calculate_measures
 from clustering import cluster
 import math
 import threading
@@ -55,7 +55,7 @@ NPC_QUEUE = queue.Queue(maxsize=10)
 collision_speed = 0  # 0 indicates there is no collision occurred.
 collision_uid = "No collision"
 prev_acc = 0
-time_offset = 0 # add time offset
+time_offset = 9 # add time offset
 pedes_prev_pos = {}
 
 speed_list = []
@@ -169,7 +169,7 @@ def get_type(class_name):
 def calculate_measures_thread(npc_state, ego_state, isNpcVehicle, TTC_list, 
                               distance_list, probability_list, collision_tag_=False):
 
-    TTC, distance, probability2 = calculate_measures(npc_state, ego_state, isNpcVehicle)
+    TTC, distance, probability2 = calculate_measures(npc_state, ego_state, isNpcVehicle, None, True)
     
     TTC_list.append(round(TTC, 6))
 
@@ -245,8 +245,7 @@ def calculate_metrics(agents, ego):
                     state_.velocity.x = (state_.transform.position.x - pedes_prev_pos[pedes_uid][0]) / 0.5
                     state_.velocity.y = (state_.transform.position.y - pedes_prev_pos[pedes_uid][1]) / 0.5
                     state_.velocity.z = (state_.transform.position.z - pedes_prev_pos[pedes_uid][2]) / 0.5
-                    
-                # state_.speed = math.sqrt(state_.velocity.x ** 2 + state_.velocity.y ** 2 + state_.velocity.z ** 2)
+                    # state_.speed = math.sqrt(state_.velocity.x ** 2 + state_.velocity.y ** 2 + state_.velocity.z ** 2)
                 
                 # print("Updated velocity: ", state_.velocity)
                 
@@ -1060,6 +1059,22 @@ def get_ego_acceleration():
 
     return acceleration
 
+def get_apollo_msg():
+    global msg_socket
+
+    msg_socket.send(json.dumps(["start_getting_data"]).encode("utf-8"))
+    data = msg_socket.recv(2048)
+
+    data = json.loads(data.decode("utf-8"))
+
+    control_info = data["control_info"]
+    local_info = data["local_info"]
+    pred_info = data["pred_info"]
+    per_info = data["per_info"]
+    tlight_info = data["tlight_info"]
+
+    return local_info, per_info, pred_info, control_info, tlight_info
+
 def check_modules_status():
     global EGO
     global DREAMVIEW
@@ -1126,15 +1141,12 @@ def check_modules_status():
     if stop:
         time.sleep(stop_time)
 
+def cal_dis(x_a, y_a, z_a, x_b, y_b, z_b):
+    return math.sqrt((x_a - x_b) ** 2 + (y_a - y_b) ** 2 + (z_a - z_b) ** 2)
+
+
 @app.route('/LGSVL/Status/Environment/State', methods=['GET'])
 def get_environment_state():
-    global MID_POINT
-    global lanes_map
-    global lane_waypoint
-    global next_lane_waypoint
-    global current_signals
-    global signals_map
-    global time_offset
 
     agents = sim.get_agents()
 
@@ -1142,14 +1154,192 @@ def get_environment_state():
     position = agents[0].state.position
     rotation = agents[0].state.rotation
     signal = sim.get_controllable(position, "signal")
-    speed = agents[0].state.speed    
+    speed = agents[0].state.speed
+    
+    # calculate advanced external features
+
+    num_obs = len(agents) - 1
+    num_npc = 0
+
+    min_obs_dist = 100000
+    speed_min_obs_dist = 1000
+    vol_min_obs_dist = 1000
+    dist_to_max_speed_obs = 100000
+
+    max_speed = -100000
+
+    for j in range(1, num_obs + 1):
+        state_ = agents[j].state
+        if isinstance(agents[j], NpcVehicle):
+            num_npc += 1
+
+        dis_to_ego = cal_dis(position.x,
+                             position.y,
+                             position.z,
+                             state_.position.x,
+                             state_.position.y,
+                             state_.position.z)
+
+        if dis_to_ego < min_obs_dist:
+            min_obs_dist = dis_to_ego
+            speed_min_obs_dist = state_.speed
+
+            bounding_box_agent = agents[j].bounding_box
+            size = bounding_box_agent.size
+            vol = size.x * size.y * size.z
+            vol_min_obs_dist = vol
+
+        if max_speed < state_.speed:
+            max_speed = state_.speed
+            dist_to_max_speed_obs = dis_to_ego
+
+    # get apollo info
+    local_info, per_info, pred_info, control_info, tlight_info = get_apollo_msg()
+    print("Get messages")
+
+    # transform ego's position to world coordinate position
+    transform = lgsvl.Transform(
+        lgsvl.Vector(position.x, position.y,
+                     position.z), lgsvl.Vector(rotation.x, rotation.y, rotation.z)
+    )
+    gps = sim.map_to_gps(transform)
+    dest_x = gps.easting
+    dest_y = gps.northing
+
+    # orient = gps.orientation
+    
+    # print("Orientation: ", gps.orientation)
+
+    # Calculate the differences between localization and simulator
+
+    vector_avut = np.array([
+        dest_x,
+        dest_y,
+    ])
+
+    vector_local = np.array([
+        local_info['position']['x'],
+        local_info['position']['y'],
+    ])
+
+    local_diff = np.linalg.norm(vector_local - vector_avut)
+                        
+    # Specify the mid point between localization's position and simulator ego's position
+
+    vector_mid = np.array([
+        (vector_avut[0] + vector_local[0]) / 2,
+        (vector_avut[1] + vector_local[1]) / 2
+    ])
+
+    gps2 = sim.map_from_gps(
+        None, None, vector_mid[1], vector_mid[0], None, None)
+
+    # Calculate the angle of lcoalization's position and simulator ego's position
+
+    v_x = vector_local[0] - vector_avut[0]
+    v_y = vector_local[1] - vector_avut[1]
+
+    local_angle = math.atan2(v_y, v_x)
+
+    if v_x < 0:
+        local_angle += math.pi
+        
+    cruise_mlp_eval = pred_info['cruise_mlp_eval']
+    semantic_lstm_eval = pred_info['semantic_lstm_eval']
+    jointly_prediction_planning_eval = pred_info['jointly_prediction_planning_eval']
+    
+    other_eval = pred_info['junction_mlp_eval'] + pred_info['cyclist_keep_lane_eval'] + pred_info['lane_scanning_eval'] + pred_info['pedestrian_interaction_eval'] 
+            + pred_info['junction_map_eval'] + pred_info['lane_aggregating_eval'] + 'vectornet_eval': pred_info['vectornet_eval'] + pred_info['unknown'] 
+            + pred_info['mlp_eval'] + pred_info['cost_eval']
+
+    # state_dict = {'x': position.x, 'y': position.y, 'z': position.z,
+    #               'rx': rotation.x, 'ry': rotation.y, 'rz': rotation.z,
+    #               'rain': weather.rain, 'fog': weather.fog, 'wetness': weather.wetness,
+    #               'timeofday': sim.time_of_day, 'signal': interpreter_signal(signal.current_state),
+    #               'speed': speed, 'throttle': control_info['throttle'], 'brake': control_info['brake'],
+    #               'steering_rate': control_info['steering_rate'], 'steering_target': control_info['steering_target'],
+    #               'acceleration': control_info['acceleration'], 'gear': control_info['gear']}
 
     state_dict = {'x': position.x, 'y': position.y, 'z': position.z,
                   'rx': rotation.x, 'ry': rotation.y, 'rz': rotation.z,
                   'rain': weather.rain, 'fog': weather.fog, 'wetness': weather.wetness,
-                  'timeofday': (sim.time_of_day - time_offset + 24) % 24, 'signal': interpreter_signal(signal.current_state),
-                  'speed': speed,}
+                  'timeofday': sim.time_of_day, 'signal': interpreter_signal(signal.current_state),
+                  'speed': speed, 'local_diff': local_diff, 'local_angle': local_angle,
+                  'dis_diff': per_info["dis_diff"], 'theta_diff': per_info["theta_diff"],
+                  'vel_diff': per_info["vel_diff"], 'size_diff': per_info["size_diff"],
+                  'cruise_mlp_eval': cruise_mlp_eval,
+                  'semantic_lstm_eval': semantic_lstm_eval,
+                  'jointly_prediction_planning_eval': jointly_prediction_planning_eval,
+                  'other_eval': other_eval, 'throttle': control_info['throttle'],
+                  'brake': control_info['brake'], 'steering_rate': control_info['steering_rate'],
+                  'steering_target': control_info['steering_target'], 'acceleration': control_info['acceleration'],
+                  'gear': control_info['gear'], "num_obs": num_obs, "num_npc": num_npc,
+                  "min_obs_dist": min_obs_dist, "speed_min_obs_dist": speed_min_obs_dist,
+                  "vol_min_obs_dist": vol_min_obs_dist, "dist_to_max_speed_obs": dist_to_max_speed_obs
+                  }
 
+    # state_dict = {'x': position.x, 'y': position.y, 'z': position.z,
+    #               'rx': rotation.x, 'ry': rotation.y, 'rz': rotation.z,
+    #               'rain': weather.rain, 'fog': weather.fog, 'wetness': weather.wetness,
+    #               'timeofday': sim.time_of_day, 'signal': interpreter_signal(signal.current_state),
+    #               'speed': speed, 'dis_diff': per_info["dis_diff"], 'theta_diff': per_info["theta_diff"],
+    #               'vel_diff': per_info["vel_diff"], 'size_diff': per_info["size_diff"],
+    #               }
+
+    # state_dict = {'x': position.x, 'y': position.y, 'z': position.z,
+    #               'rx': rotation.x, 'ry': rotation.y, 'rz': rotation.z,
+    #               'rain': weather.rain, 'fog': weather.fog, 'wetness': weather.wetness,
+    #               'timeofday': sim.time_of_day, 'signal': interpreter_signal(signal.current_state),
+    #               'speed': speed, 'local_diff': local_diff, 'local_angle': local_angle}
+
+    # state_dict = {'x': position.x, 'y': position.y, 'z': position.z,
+    #               'rx': rotation.x, 'ry': rotation.y, 'rz': rotation.z,
+    #               'rain': weather.rain, 'fog': weather.fog, 'wetness': weather.wetness,
+    #               'timeofday': sim.time_of_day, 'signal': interpreter_signal(signal.current_state),
+    #               'speed': speed, 'mlp_eval': pred_info['mlp_eval'],
+    #               'cost_eval': pred_info['cost_eval'],
+    #               'cruise_mlp_eval': pred_info['cruise_mlp_eval'],
+    #               'junction_mlp_eval': pred_info['junction_mlp_eval'],
+    #               'cyclist_keep_lane_eval': pred_info['cyclist_keep_lane_eval'],
+    #               'lane_scanning_eval': pred_info['lane_scanning_eval'],
+    #               'pedestrian_interaction_eval': pred_info['pedestrian_interaction_eval'],
+    #               'junction_map_eval': pred_info['junction_map_eval'],
+    #               'lane_aggregating_eval': pred_info['lane_aggregating_eval'],
+    #               'semantic_lstm_eval': pred_info['semantic_lstm_eval'],
+    #               'jointly_prediction_planning_eval': pred_info['jointly_prediction_planning_eval'],
+    #               'vectornet_eval': pred_info['vectornet_eval'],
+    #               'unknown': pred_info['unknown']
+    #               }
+
+    # state_dict = {'x': position.x, 'y': position.y, 'z': position.z,
+    #               'rx': rotation.x, 'ry': rotation.y, 'rz': rotation.z,
+    #               'rain': weather.rain, 'fog': weather.fog, 'wetness': weather.wetness,
+    #               'timeofday': sim.time_of_day, 'signal': interpreter_signal(signal.current_state),
+    #               'speed': speed}
+
+    # state_dict = {'x': position.x, 'y': position.y, 'z': position.z,
+    #               'rx': rotation.x, 'ry': rotation.y, 'rz': rotation.z,
+    #               'rain': weather.rain, 'fog': weather.fog, 'wetness': weather.wetness,
+    #               'timeofday': sim.time_of_day, 'signal': interpreter_signal(signal.current_state),
+    #               'speed': speed, "num_obs": num_obs, "num_npc": num_npc,
+    #               "min_obs_dist": min_obs_dist, "speed_min_obs_dist": speed_min_obs_dist,
+    #               "vol_min_obs_dist": vol_min_obs_dist, "dist_to_max_speed_obs": dist_to_max_speed_obs}
+
+    # state_dict = {'x': position.x, 'y': position.y, 'z': position.z,
+    #               'rx': rotation.x, 'ry': rotation.y, 'rz': rotation.z,
+    #               'rain': weather.rain, 'fog': weather.fog, 'wetness': weather.wetness,
+    #               'timeofday': sim.time_of_day, 'signal': interpreter_signal(signal.current_state),
+    #               'speed': speed, 'per': per_confi, 'pred': pred_confi}
+
+    # state_dict = {'x': position.x, 'y': position.y, 'z': position.z,
+    #               'rx': rotation.x, 'ry': rotation.y, 'rz': rotation.z,
+    #               'rain': weather.rain, 'fog': weather.fog, 'wetness': weather.wetness,
+    #               'timeofday': sim.time_of_day, 'signal': interpreter_signal(signal.current_state),
+    #               'speed': speed, 'local': local_diff, 'per': per_confi, 'pred': pred_confi}
+
+    # state_dict = {'x': position.x, 'y': position.y, 'z': position.z,cal_dis
+    #               'rain': weather.rain, 'fog': weather.fog, 'wetness': weather.wetness,
+    #               'timeofday': sim.time_of_day, 'signal': interpreter_signal(signal.current_state)}
     return json.dumps(state_dict)
 
 @app.route('/LGSVL/Status/Realistic', methods=['GET'])
