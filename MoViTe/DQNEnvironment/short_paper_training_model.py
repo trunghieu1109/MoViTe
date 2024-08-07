@@ -23,23 +23,23 @@ current_eps = ''
 start_eps = '0'
 end_eps = '200'
 
-road_num = '3'  # the Road Number
+road_num = '1'  # the Road Number
 second = '6'  # the experiment second
-scene = '12da60a7-2fc9-474d-a62a-5cc08cb97fe8'
+scene = 'aae03d2a-b7ca-4a88-9e41-9035287a12cc'
 requests.post(f"http://localhost:8933/LGSVL/LoadScene?scene={scene}&road_num=" + road_num)
 file_name = str(int(time.time()))
 
 goal = [
-    -208.2, 
-    10.2, 
-    -181.6
+    348.2, 
+    -7.5, 
+    -64.4
 ]
 
 def get_environment_state():
     
     r = requests.get("http://localhost:8933/LGSVL/Status/Environment/State")
     a = r.json()
-    state = np.zeros(12)
+    state = np.zeros(43)
     state[0] = a['x']
     state[1] = a['y']
     state[2] = a['z']
@@ -52,6 +52,49 @@ def get_environment_state():
     state[9] = a['ry']
     state[10] = a['rz']
     state[11] = a['speed']
+    
+    # add advanced external states 
+    state[12] = a['num_obs']
+    state[13] = a['num_npc']
+    state[14] = a['min_obs_dist']
+    state[15] = a['speed_min_obs_dist']
+    state[16] = a['vol_min_obs_dist']
+    state[17] = a['dist_to_max_speed_obs']
+    
+    # add localization option
+    
+    state[18] = a['local_diff']
+    state[19] = a['local_angle']
+    
+    # add perception option
+    state[20] = a['dis_diff']
+    state[21] = a['theta_diff']
+    state[22] = a['vel_diff']
+    state[23] = a['size_diff']
+    
+    # add prediction option
+    state[24] = a['mlp_eval']
+    state[25] = a['cost_eval']
+    state[26] = a['cruise_mlp_eval']
+    state[27] = a['junction_mlp_eval']
+    state[28] = a['cyclist_keep_lane_eval']
+    state[29] = a['lane_scanning_eval']
+    state[30] = a['pedestrian_interaction_eval']
+    state[31] = a['junction_map_eval']
+    state[32] = a['lane_aggregating_eval']
+    state[33] = a['semantic_lstm_eval']
+    state[34] = a['jointly_prediction_planning_eval']
+    state[35] = a['vectornet_eval']
+    state[36] = a['unknown']
+    
+    # add control option
+    
+    state[37] = a['throttle']
+    state[38] = a['brake']
+    state[39] = a['steering_rate']
+    state[40] = a['steering_target']
+    state[41] = a['acceleration']
+    state[42] = a['gear'] 
 
     return state
 
@@ -65,7 +108,7 @@ print("Number of action: ", N_ACTIONS)
 print("Number of state: ", N_STATES)
 
 HyperParameter = dict(BATCH_SIZE=32, GAMMA=0.9, EPS_START=1, EPS_END=0.1, EPS_DECAY=6000, TARGET_UPDATE=100,
-                      lr=3*1e-3, INITIAL_MEMORY=1000, MEMORY_SIZE=2000, SCHEDULER_UPDATE=100, WEIGHT_DECAY=1e-5,
+                      lr=3*1e-3, INITIAL_MEMORY=2000, MEMORY_SIZE=2000, SCHEDULER_UPDATE=100, WEIGHT_DECAY=1e-5,
                       LEARNING_RATE_DECAY=0.8)
 
 print("MEMORY SIZE: ", HyperParameter["MEMORY_SIZE"])
@@ -235,18 +278,19 @@ def execute_action(action_id):
     print(response)
     try:
         proC_list = response.json()['probability']
-        DTO_list = response.json()['distance']
-        ETTC_list = response.json()['ETTC']
-        JERK_list = response.json()['JERK']
+        # DTO_list = response.json()['distance']
+        # ETTC_list = response.json()['ETTC']
+        # JERK_list = response.json()['JERK']
         obstacle_uid = response.json()['collision_uid']
     except Exception as e:
         print(e)
         proC_list = [-1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -1.0]
-        DTO_list = [-1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -1.0]
-        ETTC_list = [-1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -1.0]
-        JERK_list = [-1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -1.0]
+        # DTO_list = [-1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -1.0]
+        # ETTC_list = [-1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -1.0]
+        # JERK_list = [-1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -1.0]
         
-    return proC_list, DTO_list, ETTC_list, JERK_list, obstacle_uid
+    return proC_list, obstacle_uid
+    # return proC_list, DTO_list, ETTC_list, JERK_list, obstacle_uid
 
 check_num = 5  # here depend on observation time: 2s->10, 4s->6, 6s->
 
@@ -292,7 +336,8 @@ def calculate_reward(action_id):
     global ETTC_threshold
     global JERK_threshold
     
-    proC_list, DTO_list, ETTC_list, JERK_list, obstacle_uid = execute_action(action_id)
+    # proC_list, DTO_list, ETTC_list, JERK_list, obstacle_uid = execute_action(action_id)
+    proC_list, obstacle_uid = execute_action(action_id)
     observation = get_environment_state()
     action_reward = 0
     
@@ -309,75 +354,79 @@ def calculate_reward(action_id):
     if collision_info != 'None':
         collision_reward = 1
         collision_probability = 1
-        # episode_done = True
     elif collision_info == "None":
         collision_probability = round(float(
             (requests.get("http://localhost:8933/LGSVL/Status/CollisionProbability")).content.decode(
                 encoding='utf-8')), 6)
-        
-        collision_reward = collision_probability
+        if collision_probability < 0.2:
+            collision_reward = -1
+        else:
+            collision_reward = collision_probability
         
     print("Collision Probability: ", collision_probability)
     print("Collision Reward: ", collision_reward)
       
     # Distance to obstacles reward
           
-    DTO = round(float(
-            (requests.get("http://localhost:8933/LGSVL/Status/DistanceToObstacles")).content.decode(
-                encoding='utf-8')), 6)
+    # DTO = round(float(
+    #         (requests.get("http://localhost:8933/LGSVL/Status/DistanceToObstacles")).content.decode(
+    #             encoding='utf-8')), 6)
     
-    DTO_reward = 0
+    # DTO_reward = 0
     
-    if 0 <= DTO <= DTO_threshold:
-        DTO_reward = 1 - DTO / DTO_threshold
-    else:
-        if collision_probability < 0.2:
-            DTO_reward = -1
+    # if 0 <= DTO <= DTO_threshold:
+    #     DTO_reward = 1 - DTO / DTO_threshold
+    # else:
+    #     if collision_probability < 0.2:
+    #         DTO_reward = -1
         
-    print("Distance to obstacles: ", DTO)
-    print("DTO Reward: ", DTO_reward)
+    # print("Distance to obstacles: ", DTO)
+    # print("DTO Reward: ", DTO_reward)
         
     # Estimated time to collision reward
     
-    ETTC = round(float(
-            (requests.get("http://localhost:8933/LGSVL/Status/EstimatedTimeToCollision")).content.decode(
-                encoding='utf-8')), 6)
+    # ETTC = round(float(
+    #         (requests.get("http://localhost:8933/LGSVL/Status/EstimatedTimeToCollision")).content.decode(
+    #             encoding='utf-8')), 6)
     
-    ETTC_reward = 0
+    # ETTC_reward = 0
     
-    if 0 < ETTC <= ETTC_threshold:
-        ETTC_reward = 1 - ETTC / ETTC_threshold
-    else:
-        if collision_probability < 0.2:
-            ETTC_reward = -1
+    # if 0 < ETTC <= ETTC_threshold:
+    #     ETTC_reward = 1 - ETTC / ETTC_threshold
+    # else:
+    #     if collision_probability < 0.2:
+    #         ETTC_reward = -1
         
-    print("Estimated time to collision: ", ETTC)
-    print("ETTC Reward: ", ETTC_reward)
+    # print("Estimated time to collision: ", ETTC)
+    # print("ETTC Reward: ", ETTC_reward)
         
     # JERK reward
     
-    JERK = round(float(
-            (requests.get("http://localhost:8933/LGSVL/Status/Jerk")).content.decode(
-                encoding='utf-8')), 6)
+    # JERK = round(float(
+    #         (requests.get("http://localhost:8933/LGSVL/Status/Jerk")).content.decode(
+    #             encoding='utf-8')), 6)
     
-    JERK_reward = 0
+    # JERK_reward = 0
     
-    print("JERK: ", JERK)
+    # print("JERK: ", JERK)
     
-    if JERK > JERK_threshold:
-        JERK_reward = 2 / (1 + math.exp(-(JERK - JERK_threshold))) - 1
-    else:
-        if collision_probability < 0.2:
-            JERK_reward = -1
+    # if JERK > JERK_threshold:
+    #     JERK_reward = 2 / (1 + math.exp(-(JERK - JERK_threshold))) - 1
+    # else:
+    #     if collision_probability < 0.2:
+    #         JERK_reward = -1
         
-    print("JERK Reward: ", JERK_reward)
+    # print("JERK Reward: ", JERK_reward)
 
-    action_reward = collision_reward + DTO_reward * 0.4 + JERK_reward * 0.2 + ETTC_reward * 0.4
+    # action_reward = collision_reward + DTO_reward * 0.4 + JERK_reward * 0.2 + ETTC_reward * 0.4
+    action_reward = collision_reward
             
-    return observation, action_reward, collision_probability, DTO, ETTC, JERK, episode_done, proC_list, DTO_list, ETTC_list, JERK_list, obstacle_uid
+    return observation, action_reward, collision_probability, episode_done, proC_list, obstacle_uid
+    # return observation, action_reward, collision_probability, DTO, ETTC, JERK, episode_done, proC_list, DTO_list, ETTC_list, JERK_list, obstacle_uid
 
-title = ["Episode", "Step", "State", "Action", "Reward", "Collision Probability", "Collision Probability List", 
-         "Distance To Obstacles", "Estimated Time To Collision", "JERK", "DTO_list", "ETTC_list", "JERK_list", "Action_Description", "Done"]
+# title = ["Episode", "Step", "State", "Action", "Reward", "Collision Probability", "Collision Probability List", 
+#          "Distance To Obstacles", "Estimated Time To Collision", "JERK", "DTO_list", "ETTC_list", "JERK_list", "Action_Description", "Done"]
+title = ["Episode", "Step", "State", "Action", "Reward", "Collision Probability", "Collision Probability List", "Action_Description", "Done"]
 df_title = pd.DataFrame([title])
 
 if __name__ == '__main__':
@@ -387,7 +436,7 @@ if __name__ == '__main__':
 
     dqn = DQN()
         
-    folder_name = './model/short_paper_sanfrancisco_road3/'
+    folder_name = './model/short_paper_borregasave_internal_feature/'
     
     print("Folder name: ", folder_name)
     
@@ -415,7 +464,7 @@ if __name__ == '__main__':
 
     df_title = pd.DataFrame([title])
     file_name = str(int(time.time()))
-    log_name = '../ExperimentData/short_paper_sanfrancisco_road' + road_num + '_' + file_name + '.csv'
+    log_name = '../ExperimentData/short_paper_borregasave_internal_feature_road' + road_num + '_' + file_name + '.csv'
     
     df_title.to_csv(log_name, mode='w', header=False, index=None)
 
@@ -448,7 +497,8 @@ if __name__ == '__main__':
             
             # print("Action chosen: ", action, action_description)
             # take action
-            s_, reward, proC, DTO, ETTC, JERK, done, proC_list, DTO_list, ETTC_list, JERK_list, obstacle_uid = calculate_reward(action)
+            s_, reward, proC, done, proC_list, obstacle_uid = calculate_reward(action)
+            # s_, reward, proC, DTO, ETTC, JERK, done, proC_list, DTO_list, ETTC_list, JERK_list, obstacle_uid = calculate_reward(action)
             
             print("Reward: ", reward)
             
@@ -512,12 +562,22 @@ if __name__ == '__main__':
                 'z': s_[2],
             }
 
-            print('>>>>>step, action, reward, collision_probability, DTO, ETTC, JERK, action_description, done: ', step, action,
-                    reward, round(proC, 6), round(DTO, 6), round(ETTC, 6), round(JERK, 6),
-                    "<" + action_description + ">",
-                    done)
+            # print('>>>>>step, action, reward, collision_probability, DTO, ETTC, JERK, action_description, done: ', step, action,
+            #         reward, round(proC, 6), round(DTO, 6), round(ETTC, 6), round(JERK, 6),
+            #         "<" + action_description + ">",
+            #         done)
+            
+            print('>>>>>step, action, reward, collision_probability, action_description, done: ', step, action,
+                    reward, round(proC, 6), "<" + action_description + ">", done)
+            
+            # pd.DataFrame(
+            #     [[i_episode, step, s, action, reward, proC, proC_list, DTO, ETTC, JERK, DTO_list, ETTC_list, JERK_list, action_description, done]]).to_csv(
+            #     log_name,
+            #     mode='a',
+            #     header=False, index=None)
+            
             pd.DataFrame(
-                [[i_episode, step, s, action, reward, proC, proC_list, DTO, ETTC, JERK, DTO_list, ETTC_list, JERK_list, action_description, done]]).to_csv(
+                [[i_episode, step, s, action, reward, proC, proC_list, action_description, done]]).to_csv(
                 log_name,
                 mode='a',
                 header=False, index=None)
