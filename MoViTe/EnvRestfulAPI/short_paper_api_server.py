@@ -767,15 +767,38 @@ def add_npc_cross_road():
     sy = ego_transform.position.y
     sz = ego_transform.position.z
 
+    right = lgsvl.utils.transform_to_right(ego_transform)
+    forward_ = lgsvl.utils.transform_to_forward(ego_transform)
+
     angle = math.pi
-    dist = 20 if distance == 'near' else 50
+    dist = 20 if distance == 'near' else 40
 
     point = lgsvl.Vector(sx + dist * math.cos(angle),
                          sy, sz + dist * math.sin(angle))
+
+    point += 4 * right
+
     state = lgsvl.AgentState()
     state.transform = sim.map_point_on_lane(point)
 
     generate = get_no_conflict_position(state.position, which_car)
+    if not generate:    
+        if distance == 'near':
+            # print("Collided, regenerate")
+            point -= forward_ * 10
+            state.transform = sim.map_point_on_lane(point)
+            generate = get_no_conflict_position(state.position, which_car)
+            # print("NPC Point:", point)
+
+            # print("NPC Position:", npc_state.transform.position)
+        else:
+            # print("Collided, regenerate")
+            point += forward_ * 20
+            state.transform = sim.map_point_on_lane(point)
+            generate = get_no_conflict_position(state.position, which_car)
+            # print("NPC Point:", point)
+
+            # print("NPC Position:", npc_state.transform.position)
     if generate:
         npc = sim.add_agent(which_car, lgsvl.AgentType.NPC, state, colorV)
         npc.follow_closest_lane(True, 20)
@@ -847,6 +870,7 @@ def add_npc_drive_ahead():
 
     ego_transform = sim.get_agents()[0].state.transform
     forward = lgsvl.utils.transform_to_forward(ego_transform)
+    forward_ = forward
     right = lgsvl.utils.transform_to_right(ego_transform)
 
     if distance == 'near':
@@ -881,10 +905,36 @@ def add_npc_drive_ahead():
                              ego_transform.position.z + offset * math.sin(0))
 
     npc_state = lgsvl.AgentState()
+    generate = False
     npc_state.transform = sim.map_point_on_lane(point)
+    # npc_state.transform.position = point
+
+    # print("NPC Point:", point)
+
+    # print("NPC Position:", npc_state.transform.position)
 
     generate = get_no_conflict_position(npc_state.position, which_car)
+
+    if not generate:
+        if distance == 'near':
+            # print("Collided, regenerate")
+            point += forward_ * 10
+            npc_state.transform = sim.map_point_on_lane(point)
+            generate = get_no_conflict_position(npc_state.position, which_car)
+            # print("NPC Point:", point)
+
+            # print("NPC Position:", npc_state.transform.position)
+        else:
+            # print("Collided, regenerate")
+            point -= forward_ * 20
+            npc_state.transform = sim.map_point_on_lane(point)
+            generate = get_no_conflict_position(npc_state.position, which_car)
+            # print("NPC Point:", point)
+
+            # print("NPC Position:", npc_state.transform.position)
+
     if generate:
+        # print("NPC is generated")
         npc = sim.add_agent(which_car, lgsvl.AgentType.NPC, npc_state, colorV)
         npc.follow_closest_lane(True, speed)
         npc.change_lane(change_lane == 1)
@@ -911,6 +961,7 @@ def add_npc_overtake():
     ego_transform = sim.get_agents()[0].state.transform
 
     forward = lgsvl.utils.transform_to_forward(ego_transform)
+    forward_ = forward
     right = lgsvl.utils.transform_to_right(ego_transform)
 
     if distance == 'near':
@@ -924,13 +975,13 @@ def add_npc_overtake():
             right = 4 * right
             speed = 30
     else:
-        offset = 50
+        offset = 40
         if which_car == 'BoxTruck' or which_car == 'SchoolBus':
-            forward = 50 * forward
+            forward = 40 * forward
             right = 5 * right
             speed = 20
         else:
-            forward = 50 * forward
+            forward = 40 * forward
             right = 4 * right
             speed = 30
 
@@ -948,6 +999,25 @@ def add_npc_overtake():
     npc_state.transform = sim.map_point_on_lane(point)
 
     generate = get_no_conflict_position(npc_state.position, which_car)
+
+    if not generate:    
+        if distance == 'near':
+            # print("Collided, regenerate")
+            point -= forward_ * 10
+            npc_state.transform = sim.map_point_on_lane(point)
+            generate = get_no_conflict_position(npc_state.position, which_car)
+            # print("NPC Point:", point)
+
+            # print("NPC Position:", npc_state.transform.position)
+        else:
+            # print("Collided, regenerate")
+            point += forward_ * 20
+            npc_state.transform = sim.map_point_on_lane(point)
+            generate = get_no_conflict_position(npc_state.position, which_car)
+            # print("NPC Point:", point)
+
+            # print("NPC Position:", npc_state.transform.position)
+
     if generate:
         npc = sim.add_agent(which_car, lgsvl.AgentType.NPC, npc_state, colorV)
         npc.follow_closest_lane(True, speed)
@@ -972,6 +1042,7 @@ def add_npc_drive_opposite():
 
     ego_transform = sim.get_agents()[0].state.transform
     forward = lgsvl.utils.transform_to_forward(ego_transform)
+    forward_ = forward
     right = lgsvl.utils.transform_to_right(ego_transform)
 
     if distance == 'near':
@@ -994,6 +1065,23 @@ def add_npc_drive_opposite():
     npc_state.transform = sim.map_point_on_lane(point)
 
     generate = get_no_conflict_position(npc_state.position, which_car)
+    if not generate:    
+        if distance == 'near':
+            # print("/Collided, regenerate")
+            point += forward_ * 10
+            npc_state.transform = sim.map_point_on_lane(point)
+            generate = get_no_conflict_position(npc_state.position, which_car)
+            # print("NPC Point:", point)
+
+            # print("NPC Position:", npc_state.transform.position)
+        else:
+            # print("Collided, regenerate")
+            point -= forward_ * 20
+            npc_state.transform = sim.map_point_on_lane(point)
+            generate = get_no_conflict_position(npc_state.position, which_car)
+            # print("NPC Point:", point)
+
+            # print("NPC Position:", npc_state.transform.position)
     if generate:
         npc = sim.add_agent(which_car, lgsvl.AgentType.NPC, npc_state, colorV)
         npc.follow_closest_lane(True, speed)
