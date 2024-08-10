@@ -55,8 +55,21 @@ NPC_QUEUE = queue.Queue(maxsize=10)
 collision_speed = 0  # 0 indicates there is no collision occurred.
 collision_uid = "No collision"
 prev_acc = 0
-time_offset = 9 # add time offset
+time_offset = 0 # add time offset
 pedes_prev_pos = {}
+
+current_lane = {
+    'left_boundary': {
+        'a': 0,
+        'b': 0,
+        'c': 0
+    },
+    'right_boundary': {
+        'a': 0,
+        'b': 0,
+        'c': 0
+    }
+}
 
 speed_list = []
 
@@ -68,15 +81,25 @@ prefix = '/deepqtest/lgsvl-api/'
 
 # setup connect to apollo
 
-APOLLO_HOST = '112.137.129.158'  # or 'localhost'
-PORT = 8966
-DREAMVIEW_PORT = 9988
-BRIDGE_PORT = 9090
+APOLLO_HOST = '142.115.167.204'  # or 'localhost'
+PORT = 49474
+DREAMVIEW_PORT = 49432
+BRIDGE_PORT = 49403
 
 msg_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 server_address = (APOLLO_HOST, PORT)
 
 msg_socket.connect(server_address)
+
+map = 'borregasave' # map: tartu, sanfrancisco, borregasave
+
+lanes_map_file = "./map/{}_lanes.pkl".format(map)
+lanes_map = None
+
+with open(lanes_map_file, "rb") as file:
+    lanes_map = pickle.load(file)
+
+file.close()
 
 # on collision callback function
 def on_collision(agent1, agent2, contact):
@@ -99,6 +122,8 @@ def on_collision(agent1, agent2, contact):
 
 # check whether there is collision or not
 
+def get_boundary_value(boundary, position):
+    return boundary['a'] * position.x + boundary['b'] * position.z + boundary['c']
 
 def get_no_conflict_position(position, car):
     if car == 'BoxTruck' or car == 'SchoolBus':
@@ -109,7 +134,16 @@ def get_no_conflict_position(position, car):
     if CONSTRAINS:
         agents = sim.get_agents()
         for agent in agents:
-            if math.sqrt(pow(position.x - agent.transform.position.x, 2) +
+
+            left_val_1 = get_boundary_value(current_lane['left_boundary'], position)
+            right_val_1 = get_boundary_value(current_lane['right_boundary'], position)
+
+            left_val_2 = get_boundary_value(current_lane['left_boundary'], agent.transform.position)
+            right_val_2 = get_boundary_value(current_lane['right_boundary'], agent.transform.position)
+
+            isConsidered = ((left_val_1 * left_val_2) > 0 and (right_val_1 * right_val_2) > 0)
+
+            if isConsidered and math.sqrt(pow(position.x - agent.transform.position.x, 2) +
                          pow(position.y - agent.transform.position.y, 2) +
                          pow(position.z - agent.transform.position.z, 2)) < sd:
                 generate = False
@@ -759,6 +793,7 @@ def add_npc_cross_road():
     which_car = cars[random.randint(0, 5)]
     color = colors[random.randint(0, 5)]
     change_lane = int(request.args.get('maintainlane'))
+    lane = request.args.get('lane')
     distance = str(request.args.get('position'))
     colorV = set_color(color)
 
@@ -770,13 +805,37 @@ def add_npc_cross_road():
     right = lgsvl.utils.transform_to_right(ego_transform)
     forward_ = lgsvl.utils.transform_to_forward(ego_transform)
 
-    angle = math.pi
-    dist = 20 if distance == 'near' else 40
+    # angle = 0
+    # dist = 20 if distance == 'near' else 40
 
-    point = lgsvl.Vector(sx + dist * math.cos(angle),
-                         sy, sz + dist * math.sin(angle))
+    # point = lgsvl.Vector(sx + dist * math.cos(angle),
+    #                      sy, sz + dist * math.sin(angle))
 
-    point += 4 * right
+    point = None
+
+    if lane == 'right': 
+        if distance == 'near':
+            if which_car == 'BoxTruck' or which_car == 'SchoolBus':
+                point = ego_transform.position + 4 * right + 17 * forward_
+            else:
+                point = ego_transform.position + 4 * right + 12 * forward_
+        else:
+            if which_car == 'BoxTruck' or which_car == 'SchoolBus':
+                point = ego_transform.position + 4 * right + 30 * forward_
+            else:
+                point = ego_transform.position + 4 * right + 25 * forward_
+    else:
+        if distance == 'near':
+            if which_car == 'BoxTruck' or which_car == 'SchoolBus':
+                point = ego_transform.position - 4 * right + 17 * forward_
+            else:
+                point = ego_transform.position - 4 * right + 12 * forward_
+        else:
+            if which_car == 'BoxTruck' or which_car == 'SchoolBus':
+                point = ego_transform.position - 4 * right + 30 * forward_
+            else:
+                point = ego_transform.position - 4 * right + 25 * forward_
+
 
     state = lgsvl.AgentState()
     state.transform = sim.map_point_on_lane(point)
@@ -802,7 +861,11 @@ def add_npc_cross_road():
     if generate:
         npc = sim.add_agent(which_car, lgsvl.AgentType.NPC, state, colorV)
         npc.follow_closest_lane(True, 20)
-        npc.change_lane(change_lane == 1)
+        if change_lane:
+            if lane == 'left':
+                npc.change_lane(False)
+            elif lane == 'right':
+                npc.change_lane(True)
 
         control_agents_density(npc)
     agents = sim.get_agents()
@@ -937,7 +1000,13 @@ def add_npc_drive_ahead():
         # print("NPC is generated")
         npc = sim.add_agent(which_car, lgsvl.AgentType.NPC, npc_state, colorV)
         npc.follow_closest_lane(True, speed)
-        npc.change_lane(change_lane == 1)
+        if change_lane:
+            if which_lane == 'left':
+                npc.change_lane(False)
+            elif which_lane == 'right':
+                npc.change_lane(True)
+            else:
+                npc.change_lane(random.choice([True, False]))
 
         control_agents_density(npc)
 
@@ -955,7 +1024,7 @@ def add_npc_overtake():
     which_car = cars[random.randint(0, 5)]
     color = colors[random.randint(0, 5)]
     change_lane = int(request.args.get('maintainlane'))
-    distance = str(request.args.get('position'))
+    # distance = str(request.args.get('position'))
     colorV = set_color(color)
 
     ego_transform = sim.get_agents()[0].state.transform
@@ -964,26 +1033,16 @@ def add_npc_overtake():
     forward_ = forward
     right = lgsvl.utils.transform_to_right(ego_transform)
 
-    if distance == 'near':
+    if which_car == 'BoxTruck' or which_car == 'SchoolBus':
         offset = 10
-        if which_car == 'BoxTruck' or which_car == 'SchoolBus':
-            forward = 20 * forward
-            right = 5 * right
-            speed = 20
-        else:
-            forward = 10 * forward
-            right = 4 * right
-            speed = 30
+        forward = 10 * forward
+        right = 4 * right
+        speed = 20
     else:
-        offset = 40
-        if which_car == 'BoxTruck' or which_car == 'SchoolBus':
-            forward = 40 * forward
-            right = 5 * right
-            speed = 20
-        else:
-            forward = 40 * forward
-            right = 4 * right
-            speed = 30
+        offset = 10
+        forward = 5 * forward
+        right = 4 * right
+        speed = 20
 
     if which_lane == "left":
         point = ego_transform.position - right - forward
@@ -1001,27 +1060,26 @@ def add_npc_overtake():
     generate = get_no_conflict_position(npc_state.position, which_car)
 
     if not generate:    
-        if distance == 'near':
-            # print("Collided, regenerate")
-            point -= forward_ * 10
-            npc_state.transform = sim.map_point_on_lane(point)
-            generate = get_no_conflict_position(npc_state.position, which_car)
-            # print("NPC Point:", point)
+        
+        # print("Collided, regenerate")
+        point -= forward_ * 10
+        npc_state.transform = sim.map_point_on_lane(point)
+        generate = get_no_conflict_position(npc_state.position, which_car)
+        # print("NPC Point:", point)
 
-            # print("NPC Position:", npc_state.transform.position)
-        else:
-            # print("Collided, regenerate")
-            point += forward_ * 20
-            npc_state.transform = sim.map_point_on_lane(point)
-            generate = get_no_conflict_position(npc_state.position, which_car)
-            # print("NPC Point:", point)
-
-            # print("NPC Position:", npc_state.transform.position)
+        # print("NPC Position:", npc_state.transform.position)
+        
 
     if generate:
         npc = sim.add_agent(which_car, lgsvl.AgentType.NPC, npc_state, colorV)
         npc.follow_closest_lane(True, speed)
-        npc.change_lane(change_lane == 1)
+        if change_lane:
+            if which_lane == 'left':
+                npc.change_lane(False)
+            elif which_lane == 'right':
+                npc.change_lane(True)
+            else:
+                npc.change_lane(random.choice([True, False]))
 
         control_agents_density(npc)
 
@@ -1157,11 +1215,9 @@ def get_apollo_msg():
 
     control_info = data["control_info"]
     local_info = data["local_info"]
-    pred_info = data["pred_info"]
     per_info = data["per_info"]
-    tlight_info = data["tlight_info"]
 
-    return local_info, per_info, pred_info, control_info, tlight_info
+    return local_info, per_info, control_info
 
 def check_modules_status():
     global EGO
@@ -1236,6 +1292,8 @@ def cal_dis(x_a, y_a, z_a, x_b, y_b, z_b):
 @app.route('/LGSVL/Status/Environment/State', methods=['GET'])
 def get_environment_state():
 
+    global current_lane
+
     agents = sim.get_agents()
 
     weather = sim.weather
@@ -1247,19 +1305,12 @@ def get_environment_state():
     # calculate advanced external features
 
     num_obs = len(agents) - 1
-    num_npc = 0
 
     min_obs_dist = 100000
     speed_min_obs_dist = 1000
-    vol_min_obs_dist = 1000
-    dist_to_max_speed_obs = 100000
-
-    max_speed = -100000
 
     for j in range(1, num_obs + 1):
         state_ = agents[j].state
-        if isinstance(agents[j], NpcVehicle):
-            num_npc += 1
 
         dis_to_ego = cal_dis(position.x,
                              position.y,
@@ -1272,18 +1323,41 @@ def get_environment_state():
             min_obs_dist = dis_to_ego
             speed_min_obs_dist = state_.speed
 
-            bounding_box_agent = agents[j].bounding_box
-            size = bounding_box_agent.size
-            vol = size.x * size.y * size.z
-            vol_min_obs_dist = vol
-
-        if max_speed < state_.speed:
-            max_speed = state_.speed
-            dist_to_max_speed_obs = dis_to_ego
-
     # get apollo info
-    local_info, per_info, pred_info, control_info, tlight_info = get_apollo_msg()
+    local_info, per_info, control_info = get_apollo_msg()
     print("Get messages")
+
+    # extract lane info 
+
+    for lane in control_info["lane_arr"]:
+        id = control_info["lane_arr"][lane]
+
+        if ((lanes_map[id]['central_curve'][0]['x'] <= local_info['position']['x'] and local_info['position']['x'] <= lanes_map[id]['central_curve'][-1]['x'])
+                or (lanes_map[id]['central_curve'][0]['x'] >= local_info['position']['x'] and local_info['position']['x'] >= lanes_map[id]['central_curve'][-1]['x'])):
+            if ((lanes_map[id]['central_curve'][0]['y'] <= local_info['position']['y'] and local_info['position']['y'] <= lanes_map[id]['central_curve'][-1]['y'])
+                    or (lanes_map[id]['central_curve'][0]['y'] >= local_info['position']['y'] and local_info['position']['y'] >= lanes_map[id]['central_curve'][-1]['y'])):
+                
+                left_bound_1 = sim.map_from_gps(None, None, lanes_map[id]['left_boundary'][0]['y'], lanes_map[id]['left_boundary'][0]['x'],  None, None)
+                left_bound_2 = sim.map_from_gps(None, None, lanes_map[id]['left_boundary'][-1]['y'], lanes_map[id]['left_boundary'][-1]['x'],  None, None)
+                
+                left_a = left_bound_2.position.z - left_bound_1.position.z
+                left_b = left_bound_1.position.x - left_bound_2.position.x
+                left_c = - left_a * left_bound_1.position.x - left_b * left_bound_1.position.z
+
+                right_bound_1 = sim.map_from_gps(None, None, lanes_map[id]['right_boundary'][0]['y'], lanes_map[id]['right_boundary'][0]['x'],  None, None)
+                right_bound_2 = sim.map_from_gps(None, None, lanes_map[id]['right_boundary'][-1]['y'], lanes_map[id]['right_boundary'][-1]['x'],  None, None)
+                
+                right_a = right_bound_2.position.z - right_bound_1.position.z
+                right_b = right_bound_1.position.x - right_bound_2.position.x
+                right_c = - right_a * right_bound_1.position.x - right_b * right_bound_1.position.z
+
+                current_lane['left_boundary']['a'] = left_a
+                current_lane['left_boundary']['b'] = left_b
+                current_lane['left_boundary']['c'] = left_c
+
+                current_lane['right_boundary']['a'] = right_a
+                current_lane['right_boundary']['b'] = right_b
+                current_lane['right_boundary']['c'] = right_c
 
     # transform ego's position to world coordinate position
     transform = lgsvl.Transform(
@@ -1331,103 +1405,22 @@ def get_environment_state():
 
     if v_x < 0:
         local_angle += math.pi
-        
-    cruise_mlp_eval = pred_info['cruise_mlp_eval']
-    semantic_lstm_eval = pred_info['semantic_lstm_eval']
-    jointly_prediction_planning_eval = pred_info['jointly_prediction_planning_eval']
-    
-    other_eval = pred_info['junction_mlp_eval'] + pred_info['cyclist_keep_lane_eval'] + pred_info['lane_scanning_eval'] + pred_info['pedestrian_interaction_eval'] 
-            + pred_info['junction_map_eval'] + pred_info['lane_aggregating_eval'] + 'vectornet_eval': pred_info['vectornet_eval'] + pred_info['unknown'] 
-            + pred_info['mlp_eval'] + pred_info['cost_eval']
 
-    # state_dict = {'x': position.x, 'y': position.y, 'z': position.z,
-    #               'rx': rotation.x, 'ry': rotation.y, 'rz': rotation.z,
-    #               'rain': weather.rain, 'fog': weather.fog, 'wetness': weather.wetness,
-    #               'timeofday': sim.time_of_day, 'signal': interpreter_signal(signal.current_state),
-    #               'speed': speed, 'throttle': control_info['throttle'], 'brake': control_info['brake'],
-    #               'steering_rate': control_info['steering_rate'], 'steering_target': control_info['steering_target'],
-    #               'acceleration': control_info['acceleration'], 'gear': control_info['gear']}
+    weather_state = weather.rain * 10 ** 2 + weather.fog * 10 + weather.wetness
 
     state_dict = {'x': position.x, 'y': position.y, 'z': position.z,
                   'rx': rotation.x, 'ry': rotation.y, 'rz': rotation.z,
-                  'rain': weather.rain, 'fog': weather.fog, 'wetness': weather.wetness,
-                  'timeofday': sim.time_of_day, 'signal': interpreter_signal(signal.current_state),
+                  'weather': weather_state, 'timeofday': sim.time_of_day, 
+                  'signal': interpreter_signal(signal.current_state),
                   'speed': speed, 'local_diff': local_diff, 'local_angle': local_angle,
                   'dis_diff': per_info["dis_diff"], 'theta_diff': per_info["theta_diff"],
                   'vel_diff': per_info["vel_diff"], 'size_diff': per_info["size_diff"],
-                  'cruise_mlp_eval': cruise_mlp_eval,
-                  'semantic_lstm_eval': semantic_lstm_eval,
-                  'jointly_prediction_planning_eval': jointly_prediction_planning_eval,
-                  'other_eval': other_eval, 'throttle': control_info['throttle'],
-                  'brake': control_info['brake'], 'steering_rate': control_info['steering_rate'],
-                  'steering_target': control_info['steering_target'], 'acceleration': control_info['acceleration'],
-                  'gear': control_info['gear'], "num_obs": num_obs, "num_npc": num_npc,
+                  'throttle': control_info['throttle'], 'brake': control_info['brake'], 
+                  'steering_rate': control_info['steering_rate'], 'steering_target': control_info['steering_target'], 
+                  'acceleration': control_info['acceleration'], "num_obs": num_obs, 
                   "min_obs_dist": min_obs_dist, "speed_min_obs_dist": speed_min_obs_dist,
-                  "vol_min_obs_dist": vol_min_obs_dist, "dist_to_max_speed_obs": dist_to_max_speed_obs
                   }
 
-    # state_dict = {'x': position.x, 'y': position.y, 'z': position.z,
-    #               'rx': rotation.x, 'ry': rotation.y, 'rz': rotation.z,
-    #               'rain': weather.rain, 'fog': weather.fog, 'wetness': weather.wetness,
-    #               'timeofday': sim.time_of_day, 'signal': interpreter_signal(signal.current_state),
-    #               'speed': speed, 'dis_diff': per_info["dis_diff"], 'theta_diff': per_info["theta_diff"],
-    #               'vel_diff': per_info["vel_diff"], 'size_diff': per_info["size_diff"],
-    #               }
-
-    # state_dict = {'x': position.x, 'y': position.y, 'z': position.z,
-    #               'rx': rotation.x, 'ry': rotation.y, 'rz': rotation.z,
-    #               'rain': weather.rain, 'fog': weather.fog, 'wetness': weather.wetness,
-    #               'timeofday': sim.time_of_day, 'signal': interpreter_signal(signal.current_state),
-    #               'speed': speed, 'local_diff': local_diff, 'local_angle': local_angle}
-
-    # state_dict = {'x': position.x, 'y': position.y, 'z': position.z,
-    #               'rx': rotation.x, 'ry': rotation.y, 'rz': rotation.z,
-    #               'rain': weather.rain, 'fog': weather.fog, 'wetness': weather.wetness,
-    #               'timeofday': sim.time_of_day, 'signal': interpreter_signal(signal.current_state),
-    #               'speed': speed, 'mlp_eval': pred_info['mlp_eval'],
-    #               'cost_eval': pred_info['cost_eval'],
-    #               'cruise_mlp_eval': pred_info['cruise_mlp_eval'],
-    #               'junction_mlp_eval': pred_info['junction_mlp_eval'],
-    #               'cyclist_keep_lane_eval': pred_info['cyclist_keep_lane_eval'],
-    #               'lane_scanning_eval': pred_info['lane_scanning_eval'],
-    #               'pedestrian_interaction_eval': pred_info['pedestrian_interaction_eval'],
-    #               'junction_map_eval': pred_info['junction_map_eval'],
-    #               'lane_aggregating_eval': pred_info['lane_aggregating_eval'],
-    #               'semantic_lstm_eval': pred_info['semantic_lstm_eval'],
-    #               'jointly_prediction_planning_eval': pred_info['jointly_prediction_planning_eval'],
-    #               'vectornet_eval': pred_info['vectornet_eval'],
-    #               'unknown': pred_info['unknown']
-    #               }
-
-    # state_dict = {'x': position.x, 'y': position.y, 'z': position.z,
-    #               'rx': rotation.x, 'ry': rotation.y, 'rz': rotation.z,
-    #               'rain': weather.rain, 'fog': weather.fog, 'wetness': weather.wetness,
-    #               'timeofday': sim.time_of_day, 'signal': interpreter_signal(signal.current_state),
-    #               'speed': speed}
-
-    # state_dict = {'x': position.x, 'y': position.y, 'z': position.z,
-    #               'rx': rotation.x, 'ry': rotation.y, 'rz': rotation.z,
-    #               'rain': weather.rain, 'fog': weather.fog, 'wetness': weather.wetness,
-    #               'timeofday': sim.time_of_day, 'signal': interpreter_signal(signal.current_state),
-    #               'speed': speed, "num_obs": num_obs, "num_npc": num_npc,
-    #               "min_obs_dist": min_obs_dist, "speed_min_obs_dist": speed_min_obs_dist,
-    #               "vol_min_obs_dist": vol_min_obs_dist, "dist_to_max_speed_obs": dist_to_max_speed_obs}
-
-    # state_dict = {'x': position.x, 'y': position.y, 'z': position.z,
-    #               'rx': rotation.x, 'ry': rotation.y, 'rz': rotation.z,
-    #               'rain': weather.rain, 'fog': weather.fog, 'wetness': weather.wetness,
-    #               'timeofday': sim.time_of_day, 'signal': interpreter_signal(signal.current_state),
-    #               'speed': speed, 'per': per_confi, 'pred': pred_confi}
-
-    # state_dict = {'x': position.x, 'y': position.y, 'z': position.z,
-    #               'rx': rotation.x, 'ry': rotation.y, 'rz': rotation.z,
-    #               'rain': weather.rain, 'fog': weather.fog, 'wetness': weather.wetness,
-    #               'timeofday': sim.time_of_day, 'signal': interpreter_signal(signal.current_state),
-    #               'speed': speed, 'local': local_diff, 'per': per_confi, 'pred': pred_confi}
-
-    # state_dict = {'x': position.x, 'y': position.y, 'z': position.z,cal_dis
-    #               'rain': weather.rain, 'fog': weather.fog, 'wetness': weather.wetness,
-    #               'timeofday': sim.time_of_day, 'signal': interpreter_signal(signal.current_state)}
     return json.dumps(state_dict)
 
 @app.route('/LGSVL/Status/Realistic', methods=['GET'])

@@ -39,53 +39,40 @@ def get_environment_state():
     
     r = requests.get("http://localhost:8933/LGSVL/Status/Environment/State")
     a = r.json()
-    state = np.zeros(34)
+    state = np.zeros(24)
     state[0] = a['x']
     state[1] = a['y']
     state[2] = a['z']
-    state[3] = a['rain']
-    state[4] = a['fog']
-    state[5] = a['wetness']
-    state[6] = a['timeofday']
-    state[7] = a['signal']
-    state[8] = a['rx']
-    state[9] = a['ry']
-    state[10] = a['rz']
-    state[11] = a['speed']
+    state[3] = a['weather']
+    state[4] = a['timeofday']
+    state[5] = a['signal']
+    state[6] = a['rx']
+    state[7] = a['ry']
+    state[8] = a['rz']
+    state[9] = a['speed']
     
     # add advanced external states 
-    state[12] = a['num_obs']
-    state[13] = a['num_npc']
-    state[14] = a['min_obs_dist']
-    state[15] = a['speed_min_obs_dist']
-    state[16] = a['vol_min_obs_dist']
-    state[17] = a['dist_to_max_speed_obs']
+    state[10] = a['num_obs']
+    state[11] = a['min_obs_dist']
+    state[12] = a['speed_min_obs_dist']
     
     # add localization option
     
-    state[18] = a['local_diff']
-    state[19] = a['local_angle']
+    state[13] = a['local_diff']
+    state[14] = a['local_angle']
     
     # add perception option
-    state[20] = a['dis_diff']
-    state[21] = a['theta_diff']
-    state[22] = a['vel_diff']
-    state[23] = a['size_diff']
-    
-    # add prediction option
-    state[24] = a['cruise_mlp_eval']
-    state[25] = a['semantic_lstm_eval']
-    state[26] = a['jointly_prediction_planning_eval']
-    state[27] = a['other_eval']
+    state[15] = a['dis_diff']
+    state[16] = a['theta_diff']
+    state[17] = a['vel_diff']
+    state[18] = a['size_diff']
     
     # add control option
-    
-    state[28] = a['throttle']
-    state[29] = a['brake']
-    state[30] = a['steering_rate']
-    state[31] = a['steering_target']
-    state[32] = a['acceleration']
-    state[33] = a['gear'] 
+    state[19] = a['throttle']
+    state[20] = a['brake']
+    state[21] = a['steering_rate']
+    state[22] = a['steering_target']
+    state[23] = a['acceleration']
 
     return state
 
@@ -98,8 +85,8 @@ ENV_A_SHAPE = 0
 print("Number of action: ", N_ACTIONS)
 print("Number of state: ", N_STATES)
 
-HyperParameter = dict(BATCH_SIZE=32, GAMMA=0.9, EPS_START=1, EPS_END=0.1, EPS_DECAY=6000, TARGET_UPDATE=100,
-                      lr=3*1e-3, INITIAL_MEMORY=2000, MEMORY_SIZE=2000, SCHEDULER_UPDATE=100, WEIGHT_DECAY=1e-5,
+HyperParameter = dict(BATCH_SIZE=64, GAMMA=0.9, EPS_START=1, EPS_END=0.1, EPS_DECAY=10000, TARGET_UPDATE=100,
+                      lr=3*1e-3, INITIAL_MEMORY=3500, MEMORY_SIZE=3500, SCHEDULER_UPDATE=100, WEIGHT_DECAY=1e-5,
                       LEARNING_RATE_DECAY=0.8)
 
 print("MEMORY SIZE: ", HyperParameter["MEMORY_SIZE"])
@@ -202,13 +189,13 @@ class DQN(object):
                     if action == self.previous_weather_and_time:
                         action = np.random.randint(0, N_ACTIONS)
                 else:
-                    action = np.random.randint(0, N_ACTIONS)
+                    action = np.random.randint(13, N_ACTIONS)
             
             action = action if ENV_A_SHAPE == 0 else action.reshape(ENV_A_SHAPE)
         
         if 0 <= action and action <= 12:
             self.previous_weather_and_time = action    
-        
+
         return action, choose
 
     def store_transition(self, s, a, r, s_, done):
@@ -343,7 +330,7 @@ def calculate_reward(action_id):
     episode_done = judge_done()
 
     if collision_info != 'None':
-        collision_reward = 1
+        collision_reward = 7.5
         collision_probability = 1
     elif collision_info == "None":
         collision_probability = round(float(
@@ -351,8 +338,10 @@ def calculate_reward(action_id):
                 encoding='utf-8')), 6)
         if collision_probability < 0.2:
             collision_reward = -1
-        else:
+        elif 0.2 <= collision_probability < 1.0:
             collision_reward = collision_probability
+        else:
+            collision_reward = 7.5
         
     print("Collision Probability: ", collision_probability)
     print("Collision Reward: ", collision_reward)
@@ -427,7 +416,7 @@ if __name__ == '__main__':
 
     dqn = DQN()
         
-    folder_name = './model/short_paper_borregasave_internal_feature/'
+    folder_name = './model/short_paper_borregasave_internal_feature_new_version/'
     
     print("Folder name: ", folder_name)
     
@@ -446,6 +435,25 @@ if __name__ == '__main__':
             dqn.buffer_memory = pickle.load(file)       
             
         print(dqn.buffer_memory.real_size, dqn.learn_step_counter, dqn.steps_done)
+
+        for i in range(0, dqn.buffer_memory.real_size):
+            if dqn.buffer_memory.reward[i] >= 10:
+                dqn.buffer_memory.reward[i] = 7.5
+
+        # cnt10 = 0
+        # cnt75 = 0
+
+        # for i in range(0, dqn.buffer_memory.real_size):
+        #     if dqn.buffer_memory.reward[i] >= 10:
+        #         cnt10 += 1
+
+        #     if dqn.buffer_memory.reward[i] == 7.5:
+        #         cnt75 += 1
+
+        # print("Reward = 10: ", cnt10)
+        # print("Reward = 7.5: ", cnt75)
+
+
         
     print('\nCollecting experience...')
     road_num_int = int(road_num)
