@@ -55,7 +55,7 @@ NPC_QUEUE = queue.Queue(maxsize=10)
 collision_speed = 0  # 0 indicates there is no collision occurred.
 collision_uid = "No collision"
 prev_acc = 0
-time_offset = 0 # add time offset
+time_offset = 9 # add time offset
 pedes_prev_pos = {}
 
 current_lane = {
@@ -81,17 +81,17 @@ prefix = '/deepqtest/lgsvl-api/'
 
 # setup connect to apollo
 
-APOLLO_HOST = '142.115.167.204'  # or 'localhost'
-PORT = 49474
-DREAMVIEW_PORT = 49432
-BRIDGE_PORT = 49403
+APOLLO_HOST = '70.55.143.61'  # or 'localhost'
+PORT = 41169
+DREAMVIEW_PORT = 41279
+BRIDGE_PORT = 41200
 
 msg_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 server_address = (APOLLO_HOST, PORT)
 
 msg_socket.connect(server_address)
 
-map = 'borregasave' # map: tartu, sanfrancisco, borregasave
+map = 'sanfrancisco' # map: tartu, sanfrancisco, borregasave
 
 lanes_map_file = "./map/{}_lanes.pkl".format(map)
 lanes_map = None
@@ -356,7 +356,7 @@ def get_collision_info():
     collision_info = str(collision_object)
     collision_speed_ = collision_speed
 
-    collision_object = None
+    # collision_object = None
     collision_speed = 0
     JERK = 0
     collision_type = 'None'
@@ -1456,6 +1456,7 @@ def get_loc():
     """
     global collision_object
     collision_info = str(collision_object)
+    print("Collisison Object")
     collision_object = None
     collision_type = str(None)
     if collision_info == 'OBSTACLE':
@@ -1469,6 +1470,20 @@ def get_loc():
 
     return collision_type
 
+@app.route('/LGSVL/Status/CollisionObject', methods=['GET'])
+def get_collision_object():
+    global collision_object
+    return str(collision_object)
+
+
+@app.route('/LGSVL/Status/CollisionUid', methods=['GET'])
+def get_collision_uid():
+    global collision_uid
+
+    col_uid = collision_uid
+    collision_uid = "No Collision"
+
+    return str(col_uid)
 
 @app.route('/LGSVL/Status/EGOVehicle/Speed', methods=['GET'])
 def get_speed():

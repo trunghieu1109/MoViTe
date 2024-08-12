@@ -85,7 +85,7 @@ def calculate_reward(action_id):
     
     # proC_list, DTO_list, ETTC_list, JERK_list, obstacle_uid = execute_action(action_id)
     proC_list, obstacle_uid = execute_action(action_id)
-    observation = get_environment_state()
+    observation = None
     action_reward = 0
     
     # Collision Probability Reward
@@ -96,10 +96,17 @@ def calculate_reward(action_id):
     collision_info = (requests.get("http://localhost:8933/LGSVL/Status/CollisionInfo")).content.decode(
         encoding='utf-8')
 
+    print("Collision Info: ", collision_info)
+
+    col_uid = (requests.get("http://localhost:8933/LGSVL/Status/CollisionUid")).content.decode(
+        encoding='utf-8')
+
+    print("Collision Uid: ", col_uid)
+
     episode_done = judge_done()
 
     if collision_info != 'None':
-        collision_reward = 1
+        collision_reward = 7.5
         collision_probability = 1
     elif collision_info == "None":
         collision_probability = round(float(
@@ -107,8 +114,10 @@ def calculate_reward(action_id):
                 encoding='utf-8')), 6)
         if collision_probability < 0.2:
             collision_reward = -1
-        else:
+        elif 0.2 <= collision_probability < 1.0:
             collision_reward = collision_probability
+        else:
+            collision_reward = 7.5
         
     print("Collision Probability: ", collision_probability)
     print("Collision Reward: ", collision_reward)
@@ -168,66 +177,55 @@ def calculate_reward(action_id):
     # action_reward = collision_reward + DTO_reward * 0.4 + JERK_reward * 0.2 + ETTC_reward * 0.4
     action_reward = collision_reward
             
-    return observation, action_reward, collision_probability, episode_done, proC_list, obstacle_uid
+    return observation, action_reward, collision_probability, episode_done, proC_list, obstacle_uid, collision_info, col_uid
+    # return observation, action_reward, collision_probability, DTO, ETTC, JERK, episode_done, proC_list, DTO_list, ETTC_list, JERK_list, obstacle_uid
 
 
 def get_environment_state():
     
     r = requests.get("http://localhost:8933/LGSVL/Status/Environment/State")
     a = r.json()
-    state = np.zeros(34)
+    state = np.zeros(24)
     state[0] = a['x']
     state[1] = a['y']
     state[2] = a['z']
-    state[3] = a['rain']
-    state[4] = a['fog']
-    state[5] = a['wetness']
-    state[6] = a['timeofday']
-    state[7] = a['signal']
-    state[8] = a['rx']
-    state[9] = a['ry']
-    state[10] = a['rz']
-    state[11] = a['speed']
+    state[3] = a['weather']
+    state[4] = a['timeofday']
+    state[5] = a['signal']
+    state[6] = a['rx']
+    state[7] = a['ry']
+    state[8] = a['rz']
+    state[9] = a['speed']
     
     # add advanced external states 
-    state[12] = a['num_obs']
-    state[13] = a['num_npc']
-    state[14] = a['min_obs_dist']
-    state[15] = a['speed_min_obs_dist']
-    state[16] = a['vol_min_obs_dist']
-    state[17] = a['dist_to_max_speed_obs']
+    state[10] = a['num_obs']
+    state[11] = a['min_obs_dist']
+    state[12] = a['speed_min_obs_dist']
     
     # add localization option
     
-    state[18] = a['local_diff']
-    state[19] = a['local_angle']
+    state[13] = a['local_diff']
+    state[14] = a['local_angle']
     
     # add perception option
-    state[20] = a['dis_diff']
-    state[21] = a['theta_diff']
-    state[22] = a['vel_diff']
-    state[23] = a['size_diff']
-    
-    # add prediction option
-    state[24] = a['cruise_mlp_eval']
-    state[25] = a['semantic_lstm_eval']
-    state[26] = a['jointly_prediction_planning_eval']
-    state[27] = a['other_eval']
+    state[15] = a['dis_diff']
+    state[16] = a['theta_diff']
+    state[17] = a['vel_diff']
+    state[18] = a['size_diff']
     
     # add control option
-    
-    state[28] = a['throttle']
-    state[29] = a['brake']
-    state[30] = a['steering_rate']
-    state[31] = a['steering_target']
-    state[32] = a['acceleration']
-    state[33] = a['gear'] 
+    state[19] = a['throttle']
+    state[20] = a['brake']
+    state[21] = a['steering_rate']
+    state[22] = a['steering_target']
+    state[23] = a['acceleration']
 
     return state
 
 
+
 for loop in range(0, 5):
-    requests.post("http://localhost:8933/LGSVL/LoadScene?scene=aae03d2a-b7ca-4a88-9e41-9035287a12cc&road_num=" + '1')
+    requests.post("http://localhost:8933/LGSVL/LoadScene?scene=12da60a7-2fc9-474d-a62a-5cc08cb97fe8&road_num=" + '3')
     requests.post("http://localhost:8933/LGSVL/SetObTime?observation_time=6")
 
     action_space = get_action_space()['command']
@@ -235,14 +233,14 @@ for loop in range(0, 5):
 
     print("Number of actions: ", action_space_size)
 
-    current_eps = str(200)
-    road_num = str(1)
+    current_eps = str(700)
+    road_num = str(3)
 
     file_name = str(int(time.time()))
 
     dqn = DQN()
     
-    folder_name = 'short_paper_borregasave_internal_feature'
+    folder_name = 'short_paper_sanfrancisco_road3'
     
     log_path = '../ExperimentData/Random-or-Non-random Analysis/{}/'.format(folder_name)
     model_path = './model/{}/'.format(folder_name)
@@ -258,7 +256,7 @@ for loop in range(0, 5):
     title = ["Episode", "State", "Action", "Choosing_Type", "Collision_Probability",
             "Collision_uid", "Collision_Probability_Per_Step", "Done"]
     df_title = pd.DataFrame([title])
-    df_title.to_csv(log_path + 'dqn_6s_road1_' + current_eps + 'eps_' + file_name + '_0.2eps.csv', mode='w', header=False, index=None)
+    df_title.to_csv(log_path + 'dqn_6s_road3_' + current_eps + 'eps_' + file_name + '_0.2eps.csv', mode='w', header=False, index=None)
 
     iteration = 0
     step = 0
@@ -286,7 +284,7 @@ for loop in range(0, 5):
         
             try:
                 action, type = dqn.choose_action(s, current_step, previous_weather_and_time_step)
-                _, _, probability, done, collision_probability_per_step, collision_uid, = calculate_reward(action)
+                _, _, probability, done, collision_probability_per_step, collision_uid, _, _ = calculate_reward(action)
             except json.JSONDecodeError as e:
                 print(e)    
                 retry = True 
@@ -313,7 +311,7 @@ for loop in range(0, 5):
         if done:
             # break
             # requests.post("http://localhost:8933/LGSVL/LoadScene?scene=aae03d2a-b7ca-4a88-9e41-9035287a12cc&road_num=" + '1')
-            requests.post("http://localhost:8933/LGSVL/LoadScene?scene=aae03d2a-b7ca-4a88-9e41-9035287a12cc&road_num=" + '1')
+            requests.post("http://localhost:8933/LGSVL/LoadScene?scene=12da60a7-2fc9-474d-a62a-5cc08cb97fe8&road_num=" + '3')
 
             print("Length of episode: ", len(state_))
             if len(state_) <= 5:
@@ -324,7 +322,7 @@ for loop in range(0, 5):
                     for iter in range(0, len(state_)):
                         pd.DataFrame([[iteration, state_[iter], action_[iter], type_[iter], probability_[iter], collision_uid_[iter], 
                                         collision_probability_per_step_[iter], done_[iter]]]).to_csv(
-                            log_path + 'dqn_6s_road1_' + current_eps + 'eps_' + file_name + '_0.2eps.csv',
+                            log_path + 'dqn_6s_road3_' + current_eps + 'eps_' + file_name + '_0.2eps.csv',
                             mode='a',
                             header=False, index=None)
                     iteration += 1
@@ -333,7 +331,7 @@ for loop in range(0, 5):
                 for iter in range(0, len(state_)):
                     pd.DataFrame([[iteration, state_[iter], action_[iter], type_[iter], probability_[iter], collision_uid_[iter], 
                                     collision_probability_per_step_[iter], done_[iter]]]).to_csv(
-                        log_path + 'dqn_6s_road1_' + current_eps + 'eps_' + file_name + '_0.2eps.csv',
+                        log_path + 'dqn_6s_road3_' + current_eps + 'eps_' + file_name + '_0.2eps.csv',
                         mode='a',
                         header=False, index=None)
                 iteration += 1
