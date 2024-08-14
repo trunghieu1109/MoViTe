@@ -1,3 +1,5 @@
+Đã dùng 74% bộ nhớ … 
+Nếu hết dung lượng lưu trữ, bạn sẽ không thể tạo, chỉnh sửa và tải tệp lên. Sử dụng 100 GB dung lượng với giá 45.000 ₫ 11.250 ₫ trong 1 tháng.
 
 # The ‘sum-tree’ data structure used here is very similar in spirit to the array representation
 # of a binary heap. However, instead of the usual heap property, the value of a parent node is
@@ -56,11 +58,19 @@ class SumTree:
         
         start_node = self.get_node_idx(0)
         end_node = self.get_node_idx(self.size)
+
+        total_ = 0
         
         for i in range(start_node, end_node):
             # print("Node i: ", self.nodes[i] / self.total)
             prob_.append(self.nodes[i] / self.total)
-        
+            total_ += self.nodes[i] / self.total
+
+        print("missing part: ", 1 - total_)
+
+        missing_part = 1 - total_
+        prob_[-1] += missing_part
+
         choice = np.random.choice(np.arange(0, self.size), size=batch_size, replace=False, p=prob_)
         
         return choice
