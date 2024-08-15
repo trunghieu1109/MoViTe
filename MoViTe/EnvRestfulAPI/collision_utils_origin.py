@@ -236,8 +236,7 @@ def cal_dis(a, b):
     return math.sqrt(dis_x ** 2 + dis_z ** 2)
 
 # @jit(nopython=True, fastmath=True)
-def calculate_measures(state_list, ego_state, isNpcVehicle, 
-                       mid_point = None, dis_tag = True):
+def calculate_measures(state_list, ego_state, isNpcVehicle):
     
     # print(len(state_list), len(isPedestrian))
     
@@ -252,7 +251,6 @@ def calculate_measures(state_list, ego_state, isNpcVehicle,
     # time_ego_list = []
     # time_agent_list = []
     TTC = 100000
-    distance = 100
     loProC_list, laProC_list = [0], [0]  # probability
     
     #for i in range(1, len(agents)):
@@ -261,11 +259,8 @@ def calculate_measures(state_list, ego_state, isNpcVehicle,
         state = state_list[i]
         a_position = np.array([transform.position.x, transform.position.y, transform.position.z])
         a_velocity = np.array([state.velocity.x, state.velocity.y, state.velocity.z])
-        if dis_tag:
-            dis = get_distance(ego_position, a_position[0], a_position[2])
-            # dis = cal_dis(a_position, mid_point)
-            # print("Distance from ego to obstacle: ", dis)
-            distance = dis if dis <= distance else distance
+        distance = get_distance(ego_position, a_position[0], a_position[2])
+    
         trajectory_agent_k, trajectory_agent_b = get_line(a_position, a_velocity)
         
         agent_speed = 0.0001
@@ -294,6 +289,10 @@ def calculate_measures(state_list, ego_state, isNpcVehicle,
                 loSD = 1 / 2 * (pow(ego_speed, 2) / ego_deceleration - pow(agent_speed, 2) / agent_deceleration) + 5
             loProC = calculate_collision_probability(loSD, distance)
             loProC_list.append(loProC)
+
+            # print("LoSD", loSD)
+            # print("LoCD", distance)
+            # print("LoProC: ", loProC)
         else:
             trajectory_agent_k = trajectory_agent_k if trajectory_ego_k - trajectory_agent_k != 0 else trajectory_agent_k + 0.0001
 
@@ -310,10 +309,17 @@ def calculate_measures(state_list, ego_state, isNpcVehicle,
             # print('Driving on Different Lane, TTC: {}'.format(time_ego))
 
             theta = calculate_angle_tan(trajectory_ego_k, trajectory_agent_k)
+            # print("Theta: ", theta)
+            # print("Ego speed: ", ego_speed)
+            # print("Distance: ", distance)
             # print(trajectory_ego_k, trajectory_agent_k, theta)
             laSD = pow(ego_speed * math.sin(theta), 2) / (ego_deceleration * math.sin(theta)) + 5
             laProC = calculate_collision_probability(laSD, distance)
             laProC_list.append(laProC)
+
+            # print("LaSD", laSD)
+            # print("LaCD", distance)
+            # print("LaProC: ", laProC)
 
         if abs(time_ego - time_agent) < 1:
             TTC = min(TTC, (time_ego + time_agent) / 2)
@@ -321,7 +327,7 @@ def calculate_measures(state_list, ego_state, isNpcVehicle,
     loProC_dt, laProC_dt = max(loProC_list), max(laProC_list)
     proC_dt = max(loProC_dt, laProC_dt) + (1 - max(loProC_dt, laProC_dt)) * min(loProC_dt, laProC_dt)
 
-    return TTC, distance, proC_dt
+    return TTC, 5, proC_dt
 
 
 if __name__ == "__main__":
