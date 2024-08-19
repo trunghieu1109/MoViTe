@@ -32,8 +32,7 @@ app.config['PERMANENT_SESSION_LIFETIME'] = timedelta(days=7)
 
 print('create simulator')
 
-sim = lgsvl.Simulator(os.environ.get(
-    "SIMUSaveStateLATOR_HOST", "localhost"), 8988)
+sim = lgsvl.Simulator(os.environ.get("SIMUSaveStateLATOR_HOST", "localhost"), 8977)
 
 print('connected')
 # state = lgsvl.AgentState()
@@ -79,11 +78,11 @@ Util Functions
 """
 
 # title = ['x', 'y', 'z', 'rx', 'ry', 'rz', 'rain', 'fog', 'wetness', 'timeofday', 'signal',
-#         'speed', 'local_diff', 'local_angle', 'dis_diff', 'theta_diff', 'vel_diff', 'size_diff',
+#         'speed', 'local_diff', 'local_angle', 'dis_diff', 'theta_diff', 'vel_diff', 'size_diff', 
 #         'mlp_eval', 'cost_eval', 'cruise_mlp_eval', 'junction_mlp_eval', 'cyclist_keep_lane_eval',
 #         'lane_scanning_eval', 'pedestrian_interaction_eval', 'junction_map_eval', 'lane_aggregating_eval',
-#         'semantic_lstm_eval', 'jointly_prediction_planning_eval', 'vectornet_eval', 'unknown', 'throttle',
-#         'brake', 'steering_rate', 'steering_target', 'acceleration', 'gear', "num_obs", "num_npc",
+#         'semantic_lstm_eval', 'jointly_prediction_planning_eval', 'vectornet_eval', 'unknown', 'throttle', 
+#         'brake', 'steering_rate', 'steering_target', 'acceleration', 'gear', "num_obs", "num_npc", 
 #         "min_obs_dist", "speed_min_obs_dist", "vol_min_obs_dist", "dist_to_max_speed_obs", "probability"]
 # df_title = pd.DataFrame([title])
 
@@ -97,6 +96,8 @@ def on_collision(agent1, agent2, contact):
     name2 = agent2.__dict__.get('name') if agent2 is not None else "OBSTACLE"
     uid = agent2.__dict__.get('uid') if agent2 is not None else "OBSTACLE"
     print("{} collided with {} at {}".format(name1, name2, contact))
+    if agent2 is not None:
+        print("AV speed {}, NPC speed {} ".format(agent1.state.speed, agent2.state.speed))
     global collision_object
     global collision_tag
     global collision_speed
@@ -137,16 +138,14 @@ def get_image(camera_name):
     for sensor in sensors:
         if sensor.name == camera_name:
             camera = sensor
-    filename = os.path.dirname(os.path.realpath(
-        __file__)) + '/Image/' + str(camera_name).replace(' ', '_') + '.jpg'
+    filename = os.path.dirname(os.path.realpath(__file__)) + '/Image/' + str(camera_name).replace(' ', '_') + '.jpg'
     # print(filename)
     camera.save(filename, quality=75)
     im = cv2.imread(filename, 1)
     # print(im.shape)
     # im = cv2.resize(im, (297, 582))
     im = im[400:800, 500:1020]
-    cv2.imwrite("./Image/" + str(camera_name).replace(' ', '_') +
-                "_cropped.jpg", im)
+    cv2.imwrite("./Image/" + str(camera_name).replace(' ', '_') + "_cropped.jpg", im)
     im = im.astype(np.float32)
     im /= 255.0
     # print(im)
@@ -216,13 +215,13 @@ def get_type(class_name):
 
 
 def calculate_measures_thread(state_list, ego_state, isNpcVehicle, TTC_list,
-                              distance_list, probability_list, mid_point=None,
+                              distance_list, probability_list, mid_point=None, 
                               collision_tag_=False):
 
     # print("Start Threading")
 
     TTC, distance, probability2 = calculate_measures(
-        state_list, ego_state, isNpcVehicle, mid_point, True)
+        state_list, ego_state, isNpcVehicle)
     # if SAVE_SCENARIO:
     # TTC, distance, probability2 = calculate_measures(agents, ego, SAVE_SCENARIO)
     # probability2 = get_collision_probability2(agents)
@@ -233,17 +232,17 @@ def calculate_measures_thread(state_list, ego_state, isNpcVehicle, TTC_list,
         probability2 = 1
 
     probability_list.append(round(probability2, 6))
-
+    
     # state_each_cal.append(probability2)
-
+    
     # pd.DataFrame([state_each_cal]).to_csv('./log/state/DeepCollision_' + time_stamp + '.csv', mode='a',
     #             header=False,
     #             index=None)
 
+
     # print("Stop Threading")
-
-
-def calculate_metrics(agents, ego):
+    
+def calculate_metrics(agents, ego, uid = None):
     global probability
     global DATETIME_UNIX
     global collision_tag
@@ -274,6 +273,11 @@ def calculate_metrics(agents, ego):
     i = 0
     time_step = 0.5
     speed = 0
+    sliding_step = 0.25
+    
+    sudden_appearance = False
+    overlapping = False
+    position_list = {}
 
     if SAVE_SCENARIO:
         # print(sim.current_time)
@@ -299,34 +303,64 @@ def calculate_metrics(agents, ego):
 
         # print("Observation_time: ", observation_time, "time_step: ", time_step)
         # print("Run sim ", i)
-        sim.run(time_limit=time_step)  # , time_scale=2
+        for k in range(0, int(time_step / sliding_step)):
+            sim.run(time_limit=sliding_step)  # , time_scale=2
+            
+            if uid:
+                if collision_tag:
+                    print("Collision at: ", (i * 2 + k) * 0.25, "-", (i * 2 + k + 1) * 0.25)
+                    if uid == collision_uid and (i * 2 + k + 1) * 0.25 <= 0.75:
+                        sudden_appearance = True
 
         # sim.run()
         # print("Run sim completely", i)
         # print('acc_new:', acc_new)
         # speed_new = EGO.state.speed
         # TTC, distance, probability2 = 100000, 100000, 0
-        # TTC, distance, probability2 = calculate_measures(agents, ego, True)
-
+        # TTC, distance, probability2 = calculate_measures(agents, ego, True) 
+        
         # response = requests.get("http://localhost:8933/LGSVL/Status/Environment/State")
         # a = response.json()
         # state_each_cal = [a[st] for st in title[0:-1]]
+        
+        ego_state = ego.state
+        
         state_list = []
         isNpcVehicle = []
+        
+        pos = {}
+        
+        pos[ego.uid] = {
+            'x': ego_state.position.x,
+            'y': ego_state.position.y,
+            'z': ego_state.position.z,
+            'dis_to_ego': 0
+        }
+        
         for j in range(1, len(agents)):
             state_ = agents[j].state
             state_list.append(state_)
             isNpc = (isinstance(agents[j], NpcVehicle))
             isNpcVehicle.append(isNpc)
-
-        ego_state = ego.state
+            pos[agents[j].uid] = {
+                'x': state_.position.x,
+                'y': state_.position.y,
+                'z': state_.position.z,
+                'dis_to_ego': math.sqrt((state_.position.x - ego_state.position.x) ** 2 + (state_.position.y - ego_state.position.y) ** 2 + (state_.position.z - ego_state.position.z) ** 2)
+            }
+            
+            if not overlapping:
+                if abs(ego_state.position.y - state_.position.y) > 0.4:
+                    overlapping = True
+                    
+        position_list[str(i)] = pos
 
         # thread = threading.Thread(
         #     target=calculate_measures_thread,
         #     args=(state_list, ego_state, isNpcVehicle, TTC_list,
         #           distance_list, probability_list, MID_POINT, state_each_cal, collision_tag,)
         # )
-
+        
         thread = threading.Thread(
             target=calculate_measures_thread,
             args=(state_list, ego_state, isNpcVehicle, TTC_list,
@@ -385,8 +419,7 @@ def calculate_metrics(agents, ego):
     probability = round(max(probability_list), 6)
     # print("Collision Probability:", probability)
     return {'TTC': TTC_list, 'distance': distance_list, 'collision_type': collision_type, 'collision_uid': collision_uid_,
-            # 'uncomfortable': uncomfortable,
-            'collision_speed': collision_speed_, 'probability': probability_list}
+            'collision_speed': collision_speed_, 'probability': probability_list, "sudden_appearance": sudden_appearance, "overlapping": overlapping, 'position_list': position_list}  # 'uncomfortable': uncomfortable,
 
 
 @app.route('/LGSVL')
@@ -434,7 +467,7 @@ def get_collision_info():
     collision_speed_ = collision_speed
     # uncomfortable = uncomfortable_angularAcceleration
 
-    collision_object = None
+    # collision_object = None
     collision_speed = 0
     # uncomfortable_angularAcceleration = [20, JERK_THRESHOLD, 2800]
     JERK = 0
@@ -467,16 +500,6 @@ def load_scene():
     global sensors
     global EGO
     global ROAD
-    global prev_tlight_sign
-    global prev_lane_id
-    global DREAMVIEW
-    global brake_count
-    global brake_percentage_queue
-    prev_lane_id = ""
-    prev_tlight_sign = {}
-    brake_count = 0
-    brake_percentage_queue = []
-
     print('obTime: ', observation_time)
     scene = str(request.args.get('scene'))
     road_num = str(request.args.get('road_num'))
@@ -484,14 +507,19 @@ def load_scene():
     if sim.current_scene == scene:
         sim.reset()
     else:
-        sim.load(scene)
+    	sim.load(scene)
+
+    # controllables = sim.get_controllables("signal")
+    # for c in controllables:
+    #     c.control("green=3;loop")
 
     EGO = None
+    # spawns = sim.get_spawn()
     state = lgsvl.AgentState()
-    roadTransform_start = open(
-        'Transform/transform-road' + road_num + '-start', 'rb')
-    state.transform = torch.load(
-        './Transform/{}.pt'.format("road" + "4" + "_start"))
+    # state.transform = spawns[0]
+    roadTransform_start = open('Transform/transform-road' + road_num + '-start', 'rb')
+    # state.transform = pickle.load(roadTransform_start)
+    state.transform = torch.load('./Transform/{}.pt'.format("road" + "4" + "_start"))
     if road_num == '1':
         if scene == 'bd77ac3b-fbc3-41c3-a806-25915c777022':
             state.transform.position.x = 213.8
@@ -523,20 +551,25 @@ def load_scene():
         state.transform.position.z = -110.2
         state.transform.rotation.y = 224
         state.transform.rotation.x = 0
-
+    	
     forward = lgsvl.utils.transform_to_forward(state.transform)
-
+    
     state.velocity = 3 * forward
+     
+    # print(pickle.load(roadTransform_start))
 
-    EGO = sim.add_agent("8e776f67-63d6-4fa3-8587-ad00a0b41034",
-                        lgsvl.AgentType.EGO, state)
+    EGO = sim.add_agent("8e776f67-63d6-4fa3-8587-ad00a0b41034", lgsvl.AgentType.EGO, state)
     EGO.connect_bridge(os.environ.get("BRIDGE_HOST", APOLLO_HOST), 9090)
+    #print(len(sim.get_agents()))
 
-    DREAMVIEW = lgsvl.dreamview.Connection(sim, EGO, APOLLO_HOST, '9988')
+    # speed = ego.state.speed
+    # velocity = ego.state.velocity
 
     sensors = EGO.get_sensors()
     sim.get_agents()[0].on_collision(on_collision)
+    sim.set_time_of_day(5, fixed=True)
 
+    # ss = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     data = {'road_num': road_num}
 
     if road_num == '1':
@@ -556,12 +589,16 @@ def load_scene():
     elif road_num == '3':
         requests.post(
             "http://localhost:8933/LGSVL/SetDestination?des_x=-208.2&des_y=10.2&des_z=-181.6")
-
+    
     print(road_num)
 
+    # ss_route.send(json.dumps(data).encode('utf-8'))
+    # ss.close()
     roadTransform_start.close()
     sim.run(2)
-
+    
+    #print("In the bottom of LoadScene", len(sim.get_agents()))f
+    
     return 'load success'
 
 
@@ -608,8 +645,7 @@ def reset_env():
     state = lgsvl.AgentState()
     state.transform = sim.get_agents()[0].state.transform
     sim.reset()
-    ego = sim.add_agent("8e776f67-63d6-4fa3-8587-ad00a0b41034",
-                        lgsvl.AgentType.EGO, state)
+    ego = sim.add_agent("8e776f67-63d6-4fa3-8587-ad00a0b41034", lgsvl.AgentType.EGO, state)
     # ego.transform.position
     ego.connect_bridge(os.environ.get("BRIDGE_HOST", APOLLO_HOST), 9090)
     global sensors
@@ -680,8 +716,7 @@ def save_state():
         model = agent.name
 
         agent_dict = {}
-        agent_dict.update({'model': model, 'name:': obj_name,
-                          'obj_color': obj_color_vector})
+        agent_dict.update({'model': model, 'name:': obj_name, 'obj_color': obj_color_vector})
         agent_dict.update({'positionX': agent.state.position.x, 'positionY': agent.state.position.y,
                            'positionZ': agent.state.position.z})
         agent_dict.update({'rotationX': agent.state.rotation.x, 'rotationY': agent.state.rotation.y,
@@ -701,19 +736,18 @@ def save_state():
     file.write(b)
     file.close()
     return 'save successfully'
-
-
+    
 @app.route('/LGSVL/SetDestination', methods=['POST'])
 def set_destination():
     global DESTINATION
     global EGO
-    # enable_modules()
+    #enable_modules()
     x = float(request.args.get('des_x'))
     y = float(request.args.get('des_y'))
     z = float(request.args.get('des_z'))
     print("x y z: ", x, y, z)
-    DREAMVIEW = lgsvl.dreamview.Connection(sim, EGO, APOLLO_HOST, '8999')
-    # DESTINATION = (x, y, z)
+    DREAMVIEW = lgsvl.dreamview.Connection(sim, EGO, APOLLO_HOST, '9988')
+    #DESTINATION = (x, y, z)
     DREAMVIEW.set_destination(x, z, y, coord_type=CoordType.Unity)
     return 'set destination.'
 
@@ -721,15 +755,15 @@ def set_destination():
 @app.route('/LGSVL/RollBack', methods=['POST'])
 def roll_back():
     state_ID = str(request.args.get('ID'))
-    # print(state_ID)
+    #print(state_ID)
     state = open('state/current_state_{}.json'.format(state_ID), 'r')
     content = state.read()
     state_ = json.loads(content)
     sim.weather = lgsvl.WeatherState(rain=state_['worldEffect']['rain'], fog=state_['worldEffect']['fog'],
                                      wetness=state_['worldEffect']['wetness'])
     sim.set_time_of_day(state_['worldEffect']['time'])
-
-    # print("middle of Rollback: ", len(sim.get_agents()))
+    
+    #print("middle of Rollback: ", len(sim.get_agents()))
 
     for agent in sim.get_agents():
         if agent.uid not in state_.keys():
@@ -750,8 +784,8 @@ def roll_back():
         state.velocity = velocity
         state.angular_velocity = angular_velocity
         agent.state = state
-
-    # print("In the bottom of Rollback: ", len(sim.get_agents()))
+        
+    #print("In the bottom of Rollback: ", len(sim.get_agents()))
 
     return 'rollback'
 
@@ -927,26 +961,30 @@ def add_npc_vehicle():
     car = str(which_car)
     REALISTIC = get_no_conflict_position(npc_state.position, which_car)
     print('realistic constraints: ', REALISTIC)
-    # print(car, " ", lgsvl.AgentType.NPC, " ", npc_state, " ", lgsvl.Vector(1, 1, 0))
+    # print(car, " ", lgsvl.AgentType.NPC, " ", npc_state, " ", lgsvl.Vector(1, 1, 0)) 
 
     npc = None
 
     if REALISTIC:
-        npc = sim.add_agent(car, lgsvl.AgentType.NPC,
-                            npc_state, lgsvl.Vector(1, 1, 0))
-        print("NPC is null: ", npc.uid)
-        npc.follow_closest_lane(True, 5.6)
-        if which_lane == "Current_Lane":
-            npc.change_lane(True)
-        else:
+    	npc = sim.add_agent(car, lgsvl.AgentType.NPC, npc_state, lgsvl.Vector(1, 1, 0))
+    	print ("NPC is null: ", npc.uid)
+    	npc.follow_closest_lane(True, 5.6)
+    	if which_lane == "Current_Lane":
+      	    npc.change_lane(True)
+    	else:
             npc.change_lane(False)
-
+        
     # sim.get_agents()[0].on_collision(on_collision)
     # sim.run(5)
 
     agents = sim.get_agents()
     ego = agents[0]
-    return calculate_metrics(agents, ego)
+    
+    uid = None
+    if npc:
+        uid = npc.uid
+    
+    return calculate_metrics(agents, ego, uid)
 
 
 @app.route('/LGSVL/Control/Agents/NPCVehicle/NPCVehicleMaintainLane', methods=['POST'])
@@ -975,22 +1013,28 @@ def switch_lane():
     REALISTIC = get_no_conflict_position(npc_state.position, which_car)
     print('realistic constraints: ', REALISTIC)
     # print(car, " ", lgsvl.AgentType.NPC, " ", npc_state, " ", lgsvl.Vector(1, 1, 0))
+    
+    npc = None
 
     if REALISTIC:
-        npc = sim.add_agent(car, lgsvl.AgentType.NPC,
-                            npc_state, lgsvl.Vector(1, 1, 0))
-        print("Npc is null", npc)
-        npc.follow_closest_lane(True, 5.6)
-        if which_lane == "Current_Lane":
-            npc.change_lane(False)
-        else:
+    	npc = sim.add_agent(car, lgsvl.AgentType.NPC, npc_state, lgsvl.Vector(1, 1, 0))
+    	print("Npc is null", npc)
+    	npc.follow_closest_lane(True, 5.6)
+    	if which_lane == "Current_Lane":
+      	    npc.change_lane(False)
+    	else:
             npc.change_lane(True)
 
     # sim.get_agents()[0].on_collision(on_collision)
 
     agents = sim.get_agents()
     ego = agents[0]
-    return calculate_metrics(agents, ego)
+    
+    uid = None
+    if npc:
+        uid = npc.uid
+    
+    return calculate_metrics(agents, ego, uid)
 
 
 @app.route('/LGSVL/Control/Agents/Pedestrians/WalkRandomly', methods=['POST'])
@@ -1017,8 +1061,7 @@ def add_pedestrians():
     elif which_lane == 'Current_Lane':
         # 10 meters ahead, on current lane
         npc_state.transform.position = ego_transform.position + 50.0 * forward
-        wp.append(lgsvl.WalkWaypoint(
-            ego_transform.position + 50.0 * forward, 1))
+        wp.append(lgsvl.WalkWaypoint(ego_transform.position + 50.0 * forward, 1))
 
     # npc_state.transform.position = ego_transform.position + 20 * forward - 4.0 * right
     npc_state.transform.rotation = ego_transform.rotation
@@ -1035,8 +1078,14 @@ def add_pedestrians():
 
     agents = sim.get_agents()
     ego = agents[0]
-    # print("In the bottom of Add Pedestrian: ", len(agents))
-    return calculate_metrics(agents, ego)
+    
+    uid = None
+    
+    if p:
+        uid = p.uid
+    
+    #print("In the bottom of Add Pedestrian: ", len(agents))
+    return calculate_metrics(agents, ego, uid)
 
 
 @app.route('/LGSVL/Control/ControllableObjects/TrafficLight', methods=['POST'])
@@ -1074,13 +1123,12 @@ def interpreter_signal(signal_state):
         code = 1
     return code
 
-
 def get_apollo_msg():
     global msg_socket
 
     msg_socket.send(json.dumps(["start_getting_data"]).encode("utf-8"))
     data = msg_socket.recv(2048)
-
+        
     data = json.loads(data.decode("utf-8"))
 
     control_info = data["control_info"]
@@ -1092,10 +1140,8 @@ def get_apollo_msg():
     return local_info, per_info, pred_info, control_info
     # return pred_info
 
-
 def cal_dis(x_a, y_a, z_a, x_b, y_b, z_b):
     return math.sqrt((x_a - x_b) ** 2 + (y_a - y_b) ** 2 + (z_a - z_b) ** 2)
-
 
 @app.route('/LGSVL/Status/Environment/State', methods=['GET'])
 def get_environment_state():
@@ -1116,48 +1162,48 @@ def get_environment_state():
     # state[9] = sim.time_of_day
     # state[10] = interpreter_signal(signal.current_state)
     # state[11] = speed
-
+    
     agents = sim.get_agents()
-
+    
     weather = sim.weather
     position = agents[0].state.position
     rotation = agents[0].state.rotation
     signal = sim.get_controllable(position, "signal")
     speed = agents[0].state.speed
-
+    
     # calculate advanced external features
-
+    
     # num_obs = len(agents) - 1
     # num_npc = 0
-
+    
     # min_obs_dist = 100000
     # speed_min_obs_dist = 1000
     # vol_min_obs_dist = 1000
     # dist_to_max_speed_obs = 100000
-
+    
     # max_speed = -100000
-
+    
     # for j in range(1, num_obs + 1):
     #     state_ = agents[j].state
     #     if isinstance(agents[j], NpcVehicle):
     #         num_npc += 1
-
-    #     dis_to_ego = cal_dis(position.x,
-    #                          position.y,
-    #                          position.z,
-    #                          state_.position.x,
-    #                          state_.position.y,
+            
+    #     dis_to_ego = cal_dis(position.x, 
+    #                          position.y, 
+    #                          position.z, 
+    #                          state_.position.x, 
+    #                          state_.position.y, 
     #                          state_.position.z)
-
+        
     #     if dis_to_ego < min_obs_dist:
     #         min_obs_dist = dis_to_ego
     #         speed_min_obs_dist = state_.speed
-
+            
     #         bounding_box_agent = agents[j].bounding_box
     #         size = bounding_box_agent.size
     #         vol = size.x * size.y * size.z
     #         vol_min_obs_dist = vol
-
+            
     #     if max_speed < state_.speed:
     #         max_speed = state_.speed
     #         dist_to_max_speed_obs = dis_to_ego
@@ -1218,17 +1264,17 @@ def get_environment_state():
     #               'rx': rotation.x, 'ry': rotation.y, 'rz': rotation.z,
     #               'rain': weather.rain, 'fog': weather.fog, 'wetness': weather.wetness,
     #               'timeofday': sim.time_of_day, 'signal': interpreter_signal(signal.current_state),
-    #               'speed': speed, 'throttle': control_info['throttle'], 'brake': control_info['brake'],
+    #               'speed': speed, 'throttle': control_info['throttle'], 'brake': control_info['brake'], 
     #               'steering_rate': control_info['steering_rate'], 'steering_target': control_info['steering_target'],
     #               'acceleration': control_info['acceleration'], 'gear': control_info['gear']}
-
+    
     # state_dict = {'x': position.x, 'y': position.y, 'z': position.z,
     #               'rx': rotation.x, 'ry': rotation.y, 'rz': rotation.z,
     #               'rain': weather.rain, 'fog': weather.fog, 'wetness': weather.wetness,
     #               'timeofday': sim.time_of_day, 'signal': interpreter_signal(signal.current_state),
-    #               'speed': speed, 'local_diff': local_diff, 'local_angle': local_angle,
-    #               'dis_diff': per_info["dis_diff"], 'theta_diff': per_info["theta_diff"],
-    #               'vel_diff': per_info["vel_diff"], 'size_diff': per_info["size_diff"],
+    #               'speed': speed, 'local_diff': local_diff, 'local_angle': local_angle, 
+    #               'dis_diff': per_info["dis_diff"], 'theta_diff': per_info["theta_diff"], 
+    #               'vel_diff': per_info["vel_diff"], 'size_diff': per_info["size_diff"], 
     #               'mlp_eval': pred_info['mlp_eval'], 'cost_eval': pred_info['cost_eval'],
     #               'cruise_mlp_eval': pred_info['cruise_mlp_eval'],
     #               'junction_mlp_eval': pred_info['junction_mlp_eval'],
@@ -1240,20 +1286,20 @@ def get_environment_state():
     #               'semantic_lstm_eval': pred_info['semantic_lstm_eval'],
     #               'jointly_prediction_planning_eval': pred_info['jointly_prediction_planning_eval'],
     #               'vectornet_eval': pred_info['vectornet_eval'],
-    #               'unknown': pred_info['unknown'], 'throttle': control_info['throttle'],
-    #               'brake': control_info['brake'], 'steering_rate': control_info['steering_rate'],
-    #               'steering_target': control_info['steering_target'], 'acceleration': control_info['acceleration'],
-    #               'gear': control_info['gear'], "num_obs": num_obs, "num_npc": num_npc,
+    #               'unknown': pred_info['unknown'], 'throttle': control_info['throttle'], 
+    #               'brake': control_info['brake'], 'steering_rate': control_info['steering_rate'], 
+    #               'steering_target': control_info['steering_target'], 'acceleration': control_info['acceleration'], 
+    #               'gear': control_info['gear'], "num_obs": num_obs, "num_npc": num_npc, 
     #               "min_obs_dist": min_obs_dist, "speed_min_obs_dist": speed_min_obs_dist,
     #               "vol_min_obs_dist": vol_min_obs_dist, "dist_to_max_speed_obs": dist_to_max_speed_obs
     #             }
-
+    
     # state_dict = {'x': position.x, 'y': position.y, 'z': position.z,
     #               'rx': rotation.x, 'ry': rotation.y, 'rz': rotation.z,
     #               'rain': weather.rain, 'fog': weather.fog, 'wetness': weather.wetness,
     #               'timeofday': sim.time_of_day, 'signal': interpreter_signal(signal.current_state),
-    #               'speed': speed, 'dis_diff': per_info["dis_diff"], 'theta_diff': per_info["theta_diff"],
-    #               'vel_diff': per_info["vel_diff"], 'size_diff': per_info["size_diff"],
+    #               'speed': speed, 'dis_diff': per_info["dis_diff"], 'theta_diff': per_info["theta_diff"], 
+    #               'vel_diff': per_info["vel_diff"], 'size_diff': per_info["size_diff"], 
     #               }
 
     # state_dict = {'x': position.x, 'y': position.y, 'z': position.z,
@@ -1261,12 +1307,12 @@ def get_environment_state():
     #               'rain': weather.rain, 'fog': weather.fog, 'wetness': weather.wetness,
     #               'timeofday': sim.time_of_day, 'signal': interpreter_signal(signal.current_state),
     #               'speed': speed, 'local_diff': local_diff, 'local_angle': local_angle}
-
+    
     # state_dict = {'x': position.x, 'y': position.y, 'z': position.z,
     #               'rx': rotation.x, 'ry': rotation.y, 'rz': rotation.z,
     #               'rain': weather.rain, 'fog': weather.fog, 'wetness': weather.wetness,
     #               'timeofday': sim.time_of_day, 'signal': interpreter_signal(signal.current_state),
-    #               'speed': speed, 'mlp_eval': pred_info['mlp_eval'],
+    #               'speed': speed, 'mlp_eval': pred_info['mlp_eval'], 
     #               'cost_eval': pred_info['cost_eval'],
     #               'cruise_mlp_eval': pred_info['cruise_mlp_eval'],
     #               'junction_mlp_eval': pred_info['junction_mlp_eval'],
@@ -1286,12 +1332,12 @@ def get_environment_state():
                   'rain': weather.rain, 'fog': weather.fog, 'wetness': weather.wetness,
                   'timeofday': sim.time_of_day, 'signal': interpreter_signal(signal.current_state),
                   'speed': speed}
-
+    
     # state_dict = {'x': position.x, 'y': position.y, 'z': position.z,
     #               'rx': rotation.x, 'ry': rotation.y, 'rz': rotation.z,
     #               'rain': weather.rain, 'fog': weather.fog, 'wetness': weather.wetness,
     #               'timeofday': sim.time_of_day, 'signal': interpreter_signal(signal.current_state),
-    #               'speed': speed, "num_obs": num_obs, "num_npc": num_npc,
+    #               'speed': speed, "num_obs": num_obs, "num_npc": num_npc, 
     #               "min_obs_dist": min_obs_dist, "speed_min_obs_dist": speed_min_obs_dist,
     #               "vol_min_obs_dist": vol_min_obs_dist, "dist_to_max_speed_obs": dist_to_max_speed_obs}
 
@@ -1312,7 +1358,6 @@ def get_environment_state():
     #               'timeofday': sim.time_of_day, 'signal': interpreter_signal(signal.current_state)}
     return json.dumps(state_dict)
 
-
 @app.route('/LGSVL/Status/Realistic', methods=['GET'])
 def get_realistic():
 
@@ -1322,8 +1367,7 @@ def get_realistic():
 @app.route('/LGSVL/Status/Environment/Weather', methods=['GET'])
 def get_weather():
     weather = sim.weather
-    weather_dict = {'rain': weather.rain,
-                    'fog': weather.fog, 'wetness': weather.wetness}
+    weather_dict = {'rain': weather.rain, 'fog': weather.fog, 'wetness': weather.wetness}
 
     return json.dumps(weather_dict)
 
