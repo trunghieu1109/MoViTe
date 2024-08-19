@@ -86,7 +86,7 @@ print("Number of action: ", N_ACTIONS)
 print("Number of state: ", N_STATES)
 
 HyperParameter = dict(BATCH_SIZE=64, GAMMA=0.9, EPS_START=1, EPS_END=0.1, EPS_DECAY=10000, TARGET_UPDATE=100,
-                      lr=1e-2, INITIAL_MEMORY=3500, MEMORY_SIZE=3500, SCHEDULER_UPDATE=100, WEIGHT_DECAY=1e-5,
+                      lr=3*1e-3, INITIAL_MEMORY=3500, MEMORY_SIZE=3500, SCHEDULER_UPDATE=100, WEIGHT_DECAY=1e-5,
                       LEARNING_RATE_DECAY=0.8)
 
 print("MEMORY SIZE: ", HyperParameter["MEMORY_SIZE"])
@@ -129,44 +129,12 @@ class DQN(object):
         self.learn_step_counter = 0
         self.buffer_memory = PrioritizedReplayBuffer(N_STATES, N_ACTIONS, HyperParameter["MEMORY_SIZE"], 0.01, 0.7, 0.4)
         self.previous_weather_and_time = None
-        
-        self.num_of_npc_action = 32
-        self.num_of_action = 45
-        self.action_chosen_prob = [1 / self.num_of_action] * self.num_of_action
-        self.npc_action_chosen_prob = [1 / self.num_of_npc_action] * self.num_of_npc_action
 
     def lr_lambda_(self, epoch):
         return HyperParameter['LEARNING_RATE_DECAY'] ** epoch
 
-    def update_action_prob(self, action):
-        
-        prob = self.action_chosen_prob[action]
-        
-        # print("Probability: ", prob)
-        
-        reduced_amount = prob * 0.005
-        
-        for i in range(0, self.num_of_action):
-            if i == action:
-                self.action_chosen_prob[i] -= reduced_amount
-            else:
-                self.action_chosen_prob[i] += reduced_amount / (self.num_of_action - 1)    
-                
-    def update_npc_action_prob(self, action):
-        prob = self.npc_action_chosen_prob[action]
-        
-        # print("Probability: ", prob)
-        
-        reduced_amount = prob * 0.005
-        
-        for i in range(0, self.num_of_npc_action):
-            if i == action:
-                self.npc_action_chosen_prob[i] -= reduced_amount
-            else:
-                self.npc_action_chosen_prob[i] += reduced_amount / (self.num_of_npc_action - 1)    
-
     def choose_action(self, x, current_step, prev_step):
-        # print("Current Step: ", current_step)
+        print("Current Step: ", current_step)
         x = torch.unsqueeze(torch.FloatTensor(x), 0)
         eps_threshold = HyperParameter['EPS_END'] + (
                 HyperParameter['EPS_START'] - HyperParameter['EPS_END']) * math.exp(
@@ -179,16 +147,7 @@ class DQN(object):
         action = None
             
         self.steps_done += 1
-        
-        if self.steps_done > HyperParameter["EPS_DECAY"]:
-            eps_threshold = 0.1
-        
-        isGreedy = (np.random.uniform() > eps_threshold)
-        
-        if self.steps_done <= HyperParameter["MEMORY_SIZE"]:
-            isGreedy = False
-        
-        if isGreedy:  # greedy
+        if np.random.uniform() > eps_threshold:  # greedy
             choose = "by model"
             print("Choose by model")
             # print("Let choose action by model")
@@ -221,42 +180,21 @@ class DQN(object):
         else:  # random
             choose = "randomly"
             print("Choose randomly")
-            # action = np.random.randint(0, N_ACTIONS)
-            
-            # is_weather_time_action = (0 <= action and action <= 12)
-            
-            # if is_weather_time_action:
-            #     if current_step - prev_step >= 5:
-            #         if action == self.previous_weather_and_time:
-            #             action = np.random.randint(0, N_ACTIONS)
-            #     else:
-            #         action = np.random.randint(13, N_ACTIONS)
-            
-            # action = action if ENV_A_SHAPE == 0 else action.reshape(ENV_A_SHAPE)
-            
-            action = np.random.choice(self.num_of_action, size=1, replace = False, p=self.action_chosen_prob)
-            action = action[0]
+            action = np.random.randint(0, N_ACTIONS)
             
             is_weather_time_action = (0 <= action and action <= 12)
             
             if is_weather_time_action:
                 if current_step - prev_step >= 5:
                     if action == self.previous_weather_and_time:
-                        action = np.random.choice(self.num_of_action, size=1, replace = False, p=self.action_chosen_prob)
-                        action = action[0]
+                        action = np.random.randint(0, N_ACTIONS)
                 else:
-                    action = np.random.choice(self.num_of_npc_action, size=1, replace = False, p=self.npc_action_chosen_prob) + (self.num_of_action - self.num_of_npc_action)
-                    action = action[0]
-
-            self.update_action_prob(action)
-            
-            if 12 < action:
-                self.update_npc_action_prob(action - (self.num_of_action - self.num_of_npc_action))
+                    action = np.random.randint(13, N_ACTIONS)
             
             action = action if ENV_A_SHAPE == 0 else action.reshape(ENV_A_SHAPE)
         
         if 0 <= action and action <= 12:
-            self.previous_weather_and_time = action   
+            self.previous_weather_and_time = action    
 
         return action, choose
 
@@ -296,8 +234,8 @@ class DQN(object):
         td_error = torch.abs(q_eval - q_target).detach()
         loss = torch.mean(torch.abs(q_eval - q_target) ** 2 * weights)
         
-        # pd.DataFrame([[self.learn_step_counter, self.optimizer.param_groups[0]['lr'], loss.item()]]).to_csv('./loss_log/loss_log_' + file_name + '.csv', 
-        #                                                  mode='a', header=False, index=None)
+        pd.DataFrame([[self.learn_step_counter, self.optimizer.param_groups[0]['lr'], loss.item()]]).to_csv('./loss_log/loss_log_' + file_name + '.csv', 
+                                                         mode='a', header=False, index=None)
 
         self.optimizer.zero_grad()
         loss.backward()
@@ -318,12 +256,19 @@ def execute_action(action_id):
     print(response)
     try:
         proC_list = response.json()['probability']
+        # DTO_list = response.json()['distance']
+        # ETTC_list = response.json()['ETTC']
+        # JERK_list = response.json()['JERK']
         obstacle_uid = response.json()['collision_uid']
     except Exception as e:
         print(e)
         proC_list = [-1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -1.0]
+        # DTO_list = [-1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -1.0]
+        # ETTC_list = [-1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -1.0]
+        # JERK_list = [-1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -1.0]
         
     return proC_list, obstacle_uid
+    # return proC_list, DTO_list, ETTC_list, JERK_list, obstacle_uid
 
 check_num = 5  # here depend on observation time: 2s->10, 4s->6, 6s->
 
@@ -369,6 +314,7 @@ def calculate_reward(action_id):
     global ETTC_threshold
     global JERK_threshold
     
+    # proC_list, DTO_list, ETTC_list, JERK_list, obstacle_uid = execute_action(action_id)
     proC_list, obstacle_uid = execute_action(action_id)
     observation = get_environment_state()
     action_reward = 0
@@ -391,7 +337,7 @@ def calculate_reward(action_id):
     episode_done = judge_done()
 
     if collision_info != 'None':
-        collision_reward = 15
+        collision_reward = 7.5
         collision_probability = 1
     elif collision_info == "None":
         collision_probability = round(float(
@@ -402,7 +348,7 @@ def calculate_reward(action_id):
         elif 0.2 <= collision_probability < 1.0:
             collision_reward = collision_probability
         else:
-            collision_reward = 15
+            collision_reward = 7.5
         
     print("Collision Probability: ", collision_probability)
     print("Collision Reward: ", collision_reward)
@@ -410,7 +356,10 @@ def calculate_reward(action_id):
     action_reward = collision_reward
             
     return observation, action_reward, collision_probability, episode_done, proC_list, obstacle_uid, collision_info, col_uid
+    # return observation, action_reward, collision_probability, DTO, ETTC, JERK, episode_done, proC_list, DTO_list, ETTC_list, JERK_list, obstacle_uid
 
+# title = ["Episode", "Step", "State", "Action", "Reward", "Collision Probability", "Collision Probability List", 
+#          "Distance To Obstacles", "Estimated Time To Collision", "JERK", "DTO_list", "ETTC_list", "JERK_list", "Action_Description", "Done"]
 title = ["Episode", "Step", "State", "Action", "Reward", "Collision Probability", "Collision Probability List", "Action_Description", "Done"]
 df_title = pd.DataFrame([title])
 
@@ -421,7 +370,7 @@ if __name__ == '__main__':
 
     dqn = DQN()
         
-    folder_name = './model/short_paper_sanfrancisco_road3_random_period/'
+    folder_name = './model/short_paper_sanfrancisco_road3_rm_repeated_pedes_col/'
     
     print("Folder name: ", folder_name)
     
@@ -440,6 +389,25 @@ if __name__ == '__main__':
             dqn.buffer_memory = pickle.load(file)       
             
         print(dqn.buffer_memory.real_size, dqn.learn_step_counter, dqn.steps_done)
+
+        for i in range(0, dqn.buffer_memory.real_size):
+            if dqn.buffer_memory.reward[i] >= 10:
+                dqn.buffer_memory.reward[i] = 7.5
+
+        # cnt10 = 0
+        # cnt75 = 0
+
+        # for i in range(0, dqn.buffer_memory.real_size):
+        #     if dqn.buffer_memory.reward[i] >= 10:
+        #         cnt10 += 1
+
+        #     if dqn.buffer_memory.reward[i] == 7.5:
+        #         cnt75 += 1
+
+        # print("Reward = 10: ", cnt10)
+        # print("Reward = 7.5: ", cnt75)
+
+
         
     print('\nCollecting experience...')
     road_num_int = int(road_num)
@@ -462,14 +430,6 @@ if __name__ == '__main__':
     is_stopped = False
     prev_collision_info = ""
     prev_collision_uid = ""
-    collision_position = {
-        'x': 0, 
-        'y': 0, 
-        'z': 0
-    }
-    
-    collision_per_eps = 0
-    step_after_collision = -1
         
     for i_episode in range(int(start_eps), int(end_eps)):
         print('------------------------------------------------------')
@@ -493,9 +453,7 @@ if __name__ == '__main__':
             # print("Action chosen: ", action, action_description)
             # take action
             s_, reward, proC, done, proC_list, obstacle_uid, collision_info, col_uid = calculate_reward(action)
-            # s_, reward, proC, DTO, ETTC, JERK, done, proC_list, DTO_list, ETTC_list, JERK_list, obstacle_uid = calculate_reward(action)                
-            
-            # check whether ego collided with the same pedestrian again or not
+            # s_, reward, proC, DTO, ETTC, JERK, done, proC_list, DTO_list, ETTC_list, JERK_list, obstacle_uid = calculate_reward(action)
             
             repeated_pedestrian_collision = False
 
@@ -504,58 +462,16 @@ if __name__ == '__main__':
                     if col_uid == prev_collision_uid:
                         done = True
                         repeated_pedestrian_collision = True
-                        dqn.steps_done -= 1
 
             # print("Prev: ", prev_collision_info, prev_collision_uid)
 
             if not repeated_pedestrian_collision:
                 print("Not repeated pedestrian collision")
-                
-                dis_to_prev_col = math.sqrt((s_[0] - collision_position['x']) ** 2 + (s_[1] - collision_position['y']) ** 2 + (s_[2] - collision_position['z']) ** 2)
-                
                 if collision_info != 'None':
-                    collision_per_eps += 1
-                    isCollision_ = False
-                
-                    if prev_collision_uid != col_uid:
-                        reward *= collision_per_eps
-                        isCollision_ = True
-                    else:
-                        if dis_to_prev_col >= 3:
-                            reward *= collision_per_eps
-                            isCollision_ = True
-                        else:
-                            collision_per_eps -= 1
-                            reward = 0
-                            
-                    if isCollision_:
-                        collision_position = {
-                            'x': s_[0],
-                            'y': s_[1],
-                            'z': s_[2]
-                        }
-                        prev_collision_info = collision_info
-                        prev_collision_uid = col_uid
-                        step_after_collision = 0
-                    else:
-                        if step_after_collision >= 0:
-                            step_after_collision += 1
-                            if step_after_collision >= 3:
-                                if dis_to_prev_col < 3:
-                                    done = True
-                                else:
-                                    step_after_collision = -1    
-                                               
-                else:
-                    if step_after_collision >= 0:
-                        step_after_collision += 1
-                        if step_after_collision >= 3:
-                            if dis_to_prev_col < 3:
-                                done = True
-                            else:
-                                step_after_collision = -1    
+                    prev_collision_info = collision_info
+                    prev_collision_uid = col_uid
 
-                print("Reward: ", reward)     
+                print("Reward: ", reward)
                 
                 dis__ = 100
                 
@@ -674,14 +590,6 @@ if __name__ == '__main__':
                 previous_weather_and_time_step = -5
                 prev_collision_info = ""
                 prev_collision_uid = ""
-                collision_position = {
-                    'x': 0,
-                    'y': 0,
-                    'z': 0
-                }
-                
-                collision_per_eps = 0
-                step_after_collision = -1
                 break
             step += 1
             s = s_
