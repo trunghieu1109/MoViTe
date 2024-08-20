@@ -299,6 +299,13 @@ for loop in range(0, 5):
             done_ = []
             isCollision = False
             prev_collision_object = ""
+            sudden_appearance_ = []
+            overlapping_ = []
+
+            position_list_ = []
+            repeated_collision_ = []
+            isCollision_list_ = []
+            npc_interaction_info = {}
             print("Start episode ", iteration)
             if iteration == 16:
                 break

@@ -83,8 +83,9 @@ prefix = '/deepqtest/lgsvl-api/'
 
 APOLLO_HOST = '70.55.143.61'  # or 'localhost'
 PORT = 41002
-DREAMVIEW_PORT = 41098
-BRIDGE_PORT = 41396
+DREAMVIEW_PORT = 41209
+BRIDGE_PORT = 41354
+
 
 msg_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 server_address = (APOLLO_HOST, PORT)
@@ -215,7 +216,7 @@ def calculate_measures_thread(npc_state, ego_state, isNpcVehicle, TTC_list,
     probability_list.append(round(probability2, 6))   
         
 # calculate metrics
-def calculate_metrics(agents, ego):
+def calculate_metrics(agents, ego, uid = None):
     global probability
     global ETTC
     global DTO
@@ -245,6 +246,11 @@ def calculate_metrics(agents, ego):
     
     i = 0
     time_step = 0.5
+    sliding_step = 0.25
+    
+    sudden_appearance = False
+    overlapping = False
+    position_list = {}
 
     while i < observation_time / time_step:
         
@@ -254,7 +260,14 @@ def calculate_metrics(agents, ego):
         
         # run simulator
         # print("Running simulator ....")
-        sim.run(time_limit=time_step) 
+        for k in range(0, int(time_step / sliding_step)):
+            sim.run(time_limit=sliding_step)  # , time_scale=2
+            
+            if uid:
+                if collision_tag:
+                    print("Collision at: ", (i * 2 + k) * 0.25, "-", (i * 2 + k + 1) * 0.25)
+                    if uid == collision_uid and (i * 2 + k + 1) * 0.25 <= 0.75:
+                        sudden_appearance = True
         
         # ego_acc = get_ego_acceleration()
         ego_acc = 5
@@ -264,8 +277,20 @@ def calculate_metrics(agents, ego):
         # print("Ego JERK: ", abs(ego_acc - prev_acc) / 0.5)
         prev_acc = ego_acc
         
+        ego_state = ego.state
+        
         npc_state = []
         isNpcVehicle = []
+        
+        pos = {}
+        
+        pos[ego.uid] = {
+            'x': ego_state.position.x,
+            'y': ego_state.position.y,
+            'z': ego_state.position.z,
+            'dis_to_ego': 0
+        }
+        
         for j in range(1, len(agents)):
             state_ = agents[j].state
             isNpc = (isinstance(agents[j], NpcVehicle))
@@ -286,9 +311,20 @@ def calculate_metrics(agents, ego):
                 pedes_prev_pos[pedes_uid] = np.array([state_.transform.position.x, state_.transform.position.y, state_.transform.position.z])
                 # print("Pedes position: ", pedes_prev_pos[pedes_uid])
                 
+            pos[agents[j].uid] = {
+                'x': state_.position.x,
+                'y': state_.position.y,
+                'z': state_.position.z,
+                'dis_to_ego': math.sqrt((state_.position.x - ego_state.position.x) ** 2 + (state_.position.y - ego_state.position.y) ** 2 + (state_.position.z - ego_state.position.z) ** 2)
+            }
+            
+            if not overlapping:
+                if abs(ego_state.position.y - state_.position.y) > 0.4:
+                    overlapping = True
+                
             npc_state.append(state_)
-
-        ego_state = ego.state
+            
+        position_list[str(i)] = pos
 
         thread = threading.Thread(
             target=calculate_measures_thread,
@@ -321,7 +357,7 @@ def calculate_metrics(agents, ego):
     JERK = round(max(JERK_list), 6)
     probability = round(max(probability_list), 6)
     
-    return {'ETTC': ETTC_list, 'distance': distance_list, 'JERK': JERK_list, 'collision_uid': collision_uid_, 'probability': probability_list,} 
+    return {'ETTC': ETTC_list, 'distance': distance_list, 'JERK': JERK_list, 'collision_uid': collision_uid_, 'probability': probability_list, "sudden_appearance": sudden_appearance, "overlapping": overlapping, 'position_list': position_list} 
 
 
 @app.route('/LGSVL')
@@ -840,6 +876,8 @@ def add_npc_cross_road():
     state = lgsvl.AgentState()
     state.transform = sim.map_point_on_lane(point)
 
+    npc = None
+
     generate = get_no_conflict_position(state.position, which_car)
     if not generate:    
         if distance == 'near':
@@ -870,7 +908,13 @@ def add_npc_cross_road():
         control_agents_density(npc)
     agents = sim.get_agents()
     ego = agents[0]
-    return calculate_metrics(agents, ego)
+    
+    uid = None
+    
+    if npc:
+        uid = npc.uid
+    
+    return calculate_metrics(agents, ego, uid)
 
 
 @app.route(prefix + 'agents/pedestrian/cross-road', methods=['POST'])
@@ -900,6 +944,8 @@ def add_pedestrian_cross_road():
     generate = get_no_conflict_position(
         npc_state.transform.position, 'pedestrian')
     
+    p = None
+    
     if generate:
         name = pedestrian[random.randint(0, 8)]
         p = sim.add_agent(name, lgsvl.AgentType.PEDESTRIAN, npc_state)
@@ -915,7 +961,13 @@ def add_pedestrian_cross_road():
         
     agents = sim.get_agents()
     ego = agents[0]
-    return calculate_metrics(agents, ego)
+    
+    uid = None
+    
+    if p:
+        uid = p.uid
+    
+    return calculate_metrics(agents, ego, uid)
 
 
 @app.route(prefix + 'agents/npc-vehicle/drive-ahead', methods=['POST'])
@@ -996,6 +1048,8 @@ def add_npc_drive_ahead():
 
             # print("NPC Position:", npc_state.transform.position)
 
+    npc = None
+
     if generate:
         # print("NPC is generated")
         npc = sim.add_agent(which_car, lgsvl.AgentType.NPC, npc_state, colorV)
@@ -1012,7 +1066,13 @@ def add_npc_drive_ahead():
 
     agents = sim.get_agents()
     ego = agents[0]
-    return calculate_metrics(agents, ego)
+    
+    uid = None
+    
+    if npc:
+        uid = npc.uid
+    
+    return calculate_metrics(agents, ego, uid)
 
 
 @app.route(prefix + 'agents/npc-vehicle/overtake', methods=['POST'])
@@ -1069,6 +1129,7 @@ def add_npc_overtake():
 
         # print("NPC Position:", npc_state.transform.position)
         
+    npc = None
 
     if generate:
         npc = sim.add_agent(which_car, lgsvl.AgentType.NPC, npc_state, colorV)
@@ -1085,7 +1146,13 @@ def add_npc_overtake():
 
     agents = sim.get_agents()
     ego = agents[0]
-    return calculate_metrics(agents, ego)
+    
+    uid = None
+    
+    if npc:
+        uid = npc.uid
+    
+    return calculate_metrics(agents, ego, uid)
 
 
 @app.route(prefix + 'agents/npc-vehicle/drive-opposite', methods=['POST'])
@@ -1140,6 +1207,8 @@ def add_npc_drive_opposite():
             # print("NPC Point:", point)
 
             # print("NPC Position:", npc_state.transform.position)
+    npc = None
+            
     if generate:
         npc = sim.add_agent(which_car, lgsvl.AgentType.NPC, npc_state, colorV)
         npc.follow_closest_lane(True, speed)
@@ -1149,7 +1218,12 @@ def add_npc_drive_opposite():
 
     agents = sim.get_agents()
     ego = agents[0]
-    return calculate_metrics(agents, ego)
+    
+    uid = None
+    if npc:
+        uid = npc.uid
+    
+    return calculate_metrics(agents, ego, uid)
 
 
 @app.route('/LGSVL/Control/ControllableObjects/TrafficLight', methods=['POST'])

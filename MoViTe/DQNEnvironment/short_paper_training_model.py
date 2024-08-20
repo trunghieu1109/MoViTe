@@ -207,9 +207,9 @@ class DQN(object):
                         topk_values, topk_indices = torch.topk(actions_value, k=2)
                         action = topk_indices[0][1].data.numpy()
                 else:
-                    topk_values, topk_indices = torch.topk(actions_value, k=6)
+                    topk_values, topk_indices = torch.topk(actions_value, k=15)
                     cnt = 1
-                    while cnt <= 5:
+                    while cnt <= 14:
                         action = topk_indices[0][cnt].data.numpy()
                         # print("action: ", action)
                         if not (0 <= action and action <= 12):
@@ -501,10 +501,9 @@ if __name__ == '__main__':
 
             if collision_info == 'pedestrian':
                 if collision_info == prev_collision_info:
-                    if col_uid == prev_collision_uid:
-                        done = True
-                        repeated_pedestrian_collision = True
-                        dqn.steps_done -= 1
+                    done = True
+                    repeated_pedestrian_collision = True
+                    dqn.steps_done -= 1
 
             # print("Prev: ", prev_collision_info, prev_collision_uid)
 

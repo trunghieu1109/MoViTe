@@ -14,9 +14,9 @@ from utils import *
 current_eps = ''
 final_eps = '600'
 
-road_num = '1'  # the Road Number
+road_num = '2'  # the Road Number
 second = '6'  # the experiment second
-requests.post("http://localhost:8933/LGSVL/LoadScene?scene=bd77ac3b-fbc3-41c3-a806-25915c777022&road_num=" + road_num)
+requests.post("http://localhost:8933/LGSVL/LoadScene?scene=12da60a7-2fc9-474d-a62a-5cc08cb97fe8&road_num=" + road_num)
 file_name = str(int(time.time()))
 
 per_confi = None
@@ -404,7 +404,7 @@ if __name__ == '__main__':
             print('------------------------------------------------------')
             # if i_episode == 1:
             #    requests.post("http://localhost:8933/LGSVL/SaveTransform")
-            requests.post("http://localhost:8933/LGSVL/LoadScene?scene=bd77ac3b-fbc3-41c3-a806-25915c777022&road_num=" + road_num)
+            requests.post("http://localhost:8933/LGSVL/LoadScene?scene=12da60a7-2fc9-474d-a62a-5cc08cb97fe8&road_num=" + road_num)
 
             s = get_environment_state()
 
