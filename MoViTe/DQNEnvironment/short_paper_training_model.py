@@ -19,9 +19,9 @@ ETTC_threshold = 7 # (s)
 DTO_threshold = 10 # (m)
 JERK_threshold = 5 # (m/s^2)
 
-current_eps = ''
-start_eps = '0'
-end_eps = '200'
+current_eps = '290'
+start_eps = '290'
+end_eps = '600'
 
 road_num = '3'  # the Road Number
 second = '6'  # the experiment second
@@ -315,15 +315,17 @@ def execute_action(action_id):
     print("Start action: ", api)
     response = requests.post(api)
     obstacle_uid = None
+    generated_uid = None
     print(response)
     try:
         proC_list = response.json()['probability']
         obstacle_uid = response.json()['collision_uid']
+        generated_uid = response.json()['generated_uid']
     except Exception as e:
         print(e)
         proC_list = [-1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -1.0]
         
-    return proC_list, obstacle_uid
+    return proC_list, obstacle_uid, generated_uid
 
 check_num = 5  # here depend on observation time: 2s->10, 4s->6, 6s->
 
@@ -369,7 +371,7 @@ def calculate_reward(action_id):
     global ETTC_threshold
     global JERK_threshold
     
-    proC_list, obstacle_uid = execute_action(action_id)
+    proC_list, obstacle_uid, generated_uid = execute_action(action_id)
     observation = get_environment_state()
     action_reward = 0
     
@@ -391,7 +393,7 @@ def calculate_reward(action_id):
     episode_done = judge_done()
 
     if collision_info != 'None':
-        collision_reward = 15
+        collision_reward = 7.5
         collision_probability = 1
     elif collision_info == "None":
         collision_probability = round(float(
@@ -402,14 +404,14 @@ def calculate_reward(action_id):
         elif 0.2 <= collision_probability < 1.0:
             collision_reward = collision_probability
         else:
-            collision_reward = 15
+            collision_reward = 7.5
         
     print("Collision Probability: ", collision_probability)
     print("Collision Reward: ", collision_reward)
       
     action_reward = collision_reward
             
-    return observation, action_reward, collision_probability, episode_done, proC_list, obstacle_uid, collision_info, col_uid
+    return observation, action_reward, collision_probability, episode_done, proC_list, obstacle_uid, collision_info, col_uid, generated_uid
 
 title = ["Episode", "Step", "State", "Action", "Reward", "Collision Probability", "Collision Probability List", "Action_Description", "Done"]
 df_title = pd.DataFrame([title])
@@ -441,6 +443,8 @@ if __name__ == '__main__':
             
         print(dqn.buffer_memory.real_size, dqn.learn_step_counter, dqn.steps_done)
         
+        print("Action:", dqn.buffer_memory.action)
+        
     print('\nCollecting experience...')
     road_num_int = int(road_num)
 
@@ -470,6 +474,8 @@ if __name__ == '__main__':
     
     collision_per_eps = 0
     step_after_collision = -1
+    
+    uid_list = {}
         
     for i_episode in range(int(start_eps), int(end_eps)):
         print('------------------------------------------------------')
@@ -492,7 +498,8 @@ if __name__ == '__main__':
             
             # print("Action chosen: ", action, action_description)
             # take action
-            s_, reward, proC, done, proC_list, obstacle_uid, collision_info, col_uid = calculate_reward(action)
+            s_, reward, proC, done, proC_list, obstacle_uid, collision_info, col_uid, generated_uid = calculate_reward(action)
+            
             # s_, reward, proC, DTO, ETTC, JERK, done, proC_list, DTO_list, ETTC_list, JERK_list, obstacle_uid = calculate_reward(action)                
             
             # check whether ego collided with the same pedestrian again or not
@@ -555,6 +562,13 @@ if __name__ == '__main__':
                                 step_after_collision = -1    
 
                 print("Reward: ", reward)     
+                
+                if generated_uid:
+                    uid_list[generated_uid] = dqn.buffer_memory.count
+                    
+                if col_uid != generated_uid:
+                    dqn.buffer_memory.reward[uid_list[col_uid]] = torch.as_tensor(reward)
+                    reward = reward * 2/3
                 
                 dis__ = 100
                 
