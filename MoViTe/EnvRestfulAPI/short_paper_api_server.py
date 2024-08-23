@@ -82,10 +82,9 @@ prefix = '/deepqtest/lgsvl-api/'
 # setup connect to apollo
 
 APOLLO_HOST = '70.55.143.61'  # or 'localhost'
-PORT = 41002
-DREAMVIEW_PORT = 41209
-BRIDGE_PORT = 41354
-
+PORT = 41181
+DREAMVIEW_PORT = 41330
+BRIDGE_PORT = 41229
 
 msg_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 server_address = (APOLLO_HOST, PORT)
@@ -357,7 +356,7 @@ def calculate_metrics(agents, ego, uid = None):
     JERK = round(max(JERK_list), 6)
     probability = round(max(probability_list), 6)
     
-    return {'ETTC': ETTC_list, 'distance': distance_list, 'JERK': JERK_list, 'collision_uid': collision_uid_, 'probability': probability_list, "sudden_appearance": sudden_appearance, "overlapping": overlapping, 'position_list': position_list} 
+    return {'ETTC': ETTC_list, 'distance': distance_list, 'JERK': JERK_list, 'collision_uid': collision_uid_, 'probability': probability_list, "sudden_appearance": sudden_appearance, "overlapping": overlapping, 'position_list': position_list, 'generated_uid': uid} 
 
 
 @app.route('/LGSVL')
@@ -1380,8 +1379,8 @@ def get_environment_state():
 
     num_obs = len(agents) - 1
 
-    min_obs_dist = 100000
-    speed_min_obs_dist = 1000
+    min_obs_dist = 100
+    speed_min_obs_dist = 100
 
     for j in range(1, num_obs + 1):
         state_ = agents[j].state
