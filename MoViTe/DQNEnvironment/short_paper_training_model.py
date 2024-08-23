@@ -19,8 +19,9 @@ ETTC_threshold = 7 # (s)
 DTO_threshold = 10 # (m)
 JERK_threshold = 5 # (m/s^2)
 
-current_eps = '290'
-start_eps = '290'
+current_eps = ''
+reuse_mem_eps = '285'
+start_eps = '285'
 end_eps = '600'
 
 road_num = '3'  # the Road Number
@@ -108,12 +109,8 @@ class Net(nn.Module):
     def forward(self, x, is_training=True):
         x = self.fc1(x)
         x = F.relu(x)
-        if is_training:
-            x = self.bn1(x)
         x = self.fc2(x)
         x = F.relu(x)
-        if is_training:
-            x = self.bn2(x)
         actions_value = self.out(x)
         return actions_value
 
@@ -144,7 +141,7 @@ class DQN(object):
         
         # print("Probability: ", prob)
         
-        reduced_amount = prob * 0.005
+        reduced_amount = prob * 0.05
         
         for i in range(0, self.num_of_action):
             if i == action:
@@ -157,7 +154,7 @@ class DQN(object):
         
         # print("Probability: ", prob)
         
-        reduced_amount = prob * 0.005
+        reduced_amount = prob * 0.05
         
         for i in range(0, self.num_of_npc_action):
             if i == action:
@@ -171,7 +168,7 @@ class DQN(object):
         eps_threshold = HyperParameter['EPS_END'] + (
                 HyperParameter['EPS_START'] - HyperParameter['EPS_END']) * math.exp(
             -1. * self.steps_done / HyperParameter['EPS_DECAY'])
-        
+
         print("eps threshold:", eps_threshold)
         
         choose = ""
@@ -188,12 +185,14 @@ class DQN(object):
         if self.steps_done <= HyperParameter["MEMORY_SIZE"]:
             isGreedy = False
         
+        # print("Q Eval: ", self.eval_net.forward(x, False))
+        
         if isGreedy:  # greedy
             choose = "by model"
             print("Choose by model")
             # print("Let choose action by model")
             actions_value = self.eval_net.forward(x, False)
-            # print(actions_value)
+
             # print('action value: ', actions_value, actions_value.shape)
             action = torch.max(actions_value, 1)[1].data.numpy()
             # print(actions_value.data)
@@ -423,7 +422,8 @@ if __name__ == '__main__':
 
     dqn = DQN()
         
-    folder_name = './model/short_paper_sanfrancisco_road3_random_period/'
+    folder_name = './model/short_paper_sanfrancisco_road3_standard_ver_2/'
+    reuse_folder = './model/short_paper_sanfrancisco_road3_standard/'
     
     print("Folder name: ", folder_name)
     
@@ -443,7 +443,17 @@ if __name__ == '__main__':
             
         print(dqn.buffer_memory.real_size, dqn.learn_step_counter, dqn.steps_done)
         
-        print("Action:", dqn.buffer_memory.action)
+    if reuse_mem_eps != '':
+        print("Reuse memory buffer from episode: " + reuse_mem_eps)
+        
+        with open(reuse_folder + 'rl_network_' + reuse_mem_eps + '_road' + road_num + '.pkl', "rb") as file:
+            dqn = pickle.load(file)
+        with open(reuse_folder + 'memory_buffer_' + reuse_mem_eps + '_road' + road_num + '.pkl', "rb") as file:
+            dqn.buffer_memory = pickle.load(file)       
+            
+        print(dqn.buffer_memory.real_size, dqn.learn_step_counter, dqn.steps_done)
+        print(dqn.action_chosen_prob)
+        print(dqn.npc_action_chosen_prob)
         
     print('\nCollecting experience...')
     road_num_int = int(road_num)
@@ -566,7 +576,7 @@ if __name__ == '__main__':
                 if generated_uid:
                     uid_list[generated_uid] = dqn.buffer_memory.count
                     
-                if col_uid != generated_uid:
+                if (collision_info == 'pedestrian' or collision_info == 'npc_vehicle') and col_uid != generated_uid:
                     dqn.buffer_memory.reward[uid_list[col_uid]] = torch.as_tensor(reward)
                     reward = reward * 2/3
                 
