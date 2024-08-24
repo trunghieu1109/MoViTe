@@ -50,6 +50,7 @@ def metrics_extract(exp_file):
         state = row['State'][1:-1].split(",")[0].split(" ")
         state_ = [s for s in state if s != ""]
         uid = row["Collision_uid"]
+        
         # type = row["Choosing_Type"]
         
         per_in = None
@@ -115,14 +116,21 @@ def metrics_extract(exp_file):
                     isCollision = True
                 else:
                     # print("sudden: ", sudden_appearance)
+                    # print(uid)
                     if sudden_appearance:
                         sudden_appearance_ += 1
+                        print(uid)
+                        
                     # print("repeated: ", repeated_collision)
                     if repeated_collision:
                         repeated_collision_ += 1
+                        print(uid)
+
                     # print("over: ", overlapping)
                     if overlapping:
                         overlapping_ += 1
+                        print(uid)
+                        
             else:
                 if reward > 0.5:
                     potential_collision += 1

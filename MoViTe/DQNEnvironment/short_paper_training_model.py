@@ -20,9 +20,9 @@ DTO_threshold = 10 # (m)
 JERK_threshold = 5 # (m/s^2)
 
 current_eps = ''
-reuse_mem_eps = '285'
-start_eps = '285'
-end_eps = '600'
+reuse_mem_eps = ''
+start_eps = '0'
+end_eps = '300'
 
 road_num = '3'  # the Road Number
 second = '6'  # the experiment second
@@ -295,8 +295,8 @@ class DQN(object):
         td_error = torch.abs(q_eval - q_target).detach()
         loss = torch.mean(torch.abs(q_eval - q_target) ** 2 * weights)
         
-        # pd.DataFrame([[self.learn_step_counter, self.optimizer.param_groups[0]['lr'], loss.item()]]).to_csv('./loss_log/loss_log_' + file_name + '.csv', 
-        #                                                  mode='a', header=False, index=None)
+        pd.DataFrame([[self.learn_step_counter, self.optimizer.param_groups[0]['lr'], loss.item()]]).to_csv('./loss_log/loss_log_' + file_name + '.csv', 
+                                                         mode='a', header=False, index=None)
 
         self.optimizer.zero_grad()
         loss.backward()
@@ -422,7 +422,7 @@ if __name__ == '__main__':
 
     dqn = DQN()
         
-    folder_name = './model/short_paper_sanfrancisco_road3_standard_ver_2/'
+    folder_name = './model/short_paper_sanfrancisco_road3_standard_ver_3/'
     reuse_folder = './model/short_paper_sanfrancisco_road3_standard/'
     
     print("Folder name: ", folder_name)
@@ -508,60 +508,34 @@ if __name__ == '__main__':
             
             # print("Action chosen: ", action, action_description)
             # take action
-            s_, reward, proC, done, proC_list, obstacle_uid, collision_info, col_uid, generated_uid = calculate_reward(action)
-            
-            # s_, reward, proC, DTO, ETTC, JERK, done, proC_list, DTO_list, ETTC_list, JERK_list, obstacle_uid = calculate_reward(action)                
-            
-            # check whether ego collided with the same pedestrian again or not
-            
-            repeated_pedestrian_collision = False
-
-            if collision_info == 'pedestrian':
-                if collision_info == prev_collision_info:
-                    done = True
-                    repeated_pedestrian_collision = True
-                    dqn.steps_done -= 1
-
-            # print("Prev: ", prev_collision_info, prev_collision_uid)
-
-            if not repeated_pedestrian_collision:
-                print("Not repeated pedestrian collision")
+            s_, reward, proC, done, proC_list, obstacle_uid, collision_info, col_uid, generated_uid = calculate_reward(action)            
                 
-                dis_to_prev_col = math.sqrt((s_[0] - collision_position['x']) ** 2 + (s_[1] - collision_position['y']) ** 2 + (s_[2] - collision_position['z']) ** 2)
-                
-                if collision_info != 'None':
-                    collision_per_eps += 1
-                    isCollision_ = False
-                
-                    if prev_collision_uid != col_uid:
+            dis_to_prev_col = math.sqrt((s_[0] - collision_position['x']) ** 2 + (s_[1] - collision_position['y']) ** 2 + (s_[2] - collision_position['z']) ** 2)
+            
+            if collision_info != 'None':
+                collision_per_eps += 1
+                isCollision_ = False
+            
+                if prev_collision_uid != col_uid:
+                    reward *= collision_per_eps
+                    isCollision_ = True
+                else:
+                    if dis_to_prev_col >= 3:
                         reward *= collision_per_eps
                         isCollision_ = True
                     else:
-                        if dis_to_prev_col >= 3:
-                            reward *= collision_per_eps
-                            isCollision_ = True
-                        else:
-                            collision_per_eps -= 1
-                            reward = 0
-                            
-                    if isCollision_:
-                        collision_position = {
-                            'x': s_[0],
-                            'y': s_[1],
-                            'z': s_[2]
-                        }
-                        prev_collision_info = collision_info
-                        prev_collision_uid = col_uid
-                        step_after_collision = 0
-                    else:
-                        if step_after_collision >= 0:
-                            step_after_collision += 1
-                            if step_after_collision >= 3:
-                                if dis_to_prev_col < 3:
-                                    done = True
-                                else:
-                                    step_after_collision = -1    
-                                               
+                        collision_per_eps -= 1
+                        reward = 0
+                        
+                if isCollision_:
+                    collision_position = {
+                        'x': s_[0],
+                        'y': s_[1],
+                        'z': s_[2]
+                    }
+                    prev_collision_info = collision_info
+                    prev_collision_uid = col_uid
+                    step_after_collision = 0
                 else:
                     if step_after_collision >= 0:
                         step_after_collision += 1
@@ -570,120 +544,127 @@ if __name__ == '__main__':
                                 done = True
                             else:
                                 step_after_collision = -1    
-
-                print("Reward: ", reward)     
-                
-                if generated_uid:
-                    uid_list[generated_uid] = dqn.buffer_memory.count
-                    
-                if (collision_info == 'pedestrian' or collision_info == 'npc_vehicle') and col_uid != generated_uid:
-                    dqn.buffer_memory.reward[uid_list[col_uid]] = torch.as_tensor(reward)
-                    reward = reward * 2/3
-                
-                dis__ = 100
-                
-                if prev_position:
-                    dis__x = prev_position['x'] - s_[0]
-                    dis__y = prev_position['y'] - s_[1]
-                    dis__z = prev_position['z'] - s_[2]
-                    dis__ = math.sqrt(dis__x ** 2 + dis__y ** 2 + dis__z ** 2) 
-                    
-                finished = False
-                dis_to_goal = 100
-                dis_to_goal_x = s_[0] - goal[0]
-                dis_to_goal_y = s_[1] - goal[1]
-                dis_to_goal_z = s_[2] - goal[2]
-                dis_to_goal = math.sqrt(dis_to_goal_x ** 2 + dis_to_goal_y ** 2 + dis_to_goal_z ** 2) 
-                
-                if dis__ <= 2 and dis_to_goal <= 5:
-                    if not is_stopped:
-                        dqn.store_transition(s, action, reward, s_, done)
-                    else:
-                        print("Don't save this transition into replay buffer")
-                        dqn.steps_done -= 1
-                    is_stopped = True
-                    done = True
-                else:
-                    is_stopped = False
-                    dqn.store_transition(s, action, reward, s_, done)
-                
-                prev_position = {
-                    'x': s_[0],
-                    'y': s_[1],
-                    'z': s_[2]
-                }
-                
-                # Consider whether colliding to obstacle (signal, static obstacle, v.v) or not
-                if collide_with_obstacle == True:
-                    dis_x = pre_pos_obstacle_collision['x'] - s_[0]
-                    dis_y = pre_pos_obstacle_collision['y'] - s_[1]
-                    dis_z = pre_pos_obstacle_collision['z'] - s_[2]
-                    dis_ = math.sqrt(dis_x ** 2 + dis_y ** 2 + dis_z ** 2)
-                    
-                    if dis_ <= 2:
-                        print(80*'*')
-                        print("Stop because of colliding to obstacles")
-                        print(80*'*')
-                        done = True
-                
-                if obstacle_uid == 'OBSTACLE':
-                    print(80*'*')
-                    print("Colliding with obstalces")
-                    print(80*'*')
-                    collide_with_obstacle = True
-                else:
-                    collide_with_obstacle = False
-                
-                pre_pos_obstacle_collision = {
-                    'x': s_[0],
-                    'y': s_[1],
-                    'z': s_[2],
-                }
-
-                # print('>>>>>step, action, reward, collision_probability, DTO, ETTC, JERK, action_description, done: ', step, action,
-                #         reward, round(proC, 6), round(DTO, 6), round(ETTC, 6), round(JERK, 6),
-                #         "<" + action_description + ">",
-                #         done)
-                
-                print('>>>>>step, action, reward, collision_probability, action_description, done: ', step, action,
-                        reward, round(proC, 6), "<" + action_description + ">", done)
-                
-                # pd.DataFrame(
-                #     [[i_episode, step, s, action, reward, proC, proC_list, DTO, ETTC, JERK, DTO_list, ETTC_list, JERK_list, action_description, done]]).to_csv(
-                #     log_name,
-                #     mode='a',
-                #     header=False, index=None)
-                
-                pd.DataFrame(
-                    [[i_episode, step, s, action, reward, proC, proC_list, action_description, done]]).to_csv(
-                    log_name,
-                    mode='a',
-                    header=False, index=None)
-
-                ep_r += reward
-                if dqn.memory_counter > HyperParameter['MEMORY_SIZE']:
-                    dqn.learn()
-                    if done:
-                        print('Ep: ', i_episode,
-                                '| Ep_r: ', round(ep_r, 2))
-
-                if (i_episode + 1) % 5 == 0:
-                    torch.save(dqn.eval_net.state_dict(),
-                                folder_name + 'eval_net_' + str(
-                                    i_episode + 1) + '_road' + road_num + '.pt')
-                    torch.save(dqn.target_net.state_dict(),
-                                folder_name + 'target_net_' + str(
-                                    i_episode + 1) + '_road' + road_num + '.pt')
-                    
-                    with open(folder_name + 'memory_buffer_' + str(
-                                    i_episode + 1) + '_road' + road_num + '.pkl', "wb") as file:
-                        pickle.dump(dqn.buffer_memory, file)
-                        
-                    with open(folder_name + 'rl_network_' + str(
-                                    i_episode + 1) + '_road' + road_num + '.pkl', "wb") as file:
-                        pickle.dump(dqn, file)
+                                            
             else:
-                print("Repeated pedestrian collision, Next eps")
+                if step_after_collision >= 0:
+                    step_after_collision += 1
+                    if step_after_collision >= 3:
+                        if dis_to_prev_col < 3:
+                            done = True
+                        else:
+                            step_after_collision = -1    
+
+            print("Reward: ", reward)     
+            
+            if generated_uid:
+                uid_list[generated_uid] = dqn.buffer_memory.count
+                
+            if (collision_info == 'pedestrian' or collision_info == 'npc_vehicle') and col_uid != generated_uid:
+                dqn.buffer_memory.reward[uid_list[col_uid]] = torch.as_tensor(reward)
+                reward = reward * 2/3
+            
+            dis__ = 100
+            
+            if prev_position:
+                dis__x = prev_position['x'] - s_[0]
+                dis__y = prev_position['y'] - s_[1]
+                dis__z = prev_position['z'] - s_[2]
+                dis__ = math.sqrt(dis__x ** 2 + dis__y ** 2 + dis__z ** 2) 
+                
+            finished = False
+            dis_to_goal = 100
+            dis_to_goal_x = s_[0] - goal[0]
+            dis_to_goal_y = s_[1] - goal[1]
+            dis_to_goal_z = s_[2] - goal[2]
+            dis_to_goal = math.sqrt(dis_to_goal_x ** 2 + dis_to_goal_y ** 2 + dis_to_goal_z ** 2) 
+            
+            if dis__ <= 2 and dis_to_goal <= 5:
+                if not is_stopped:
+                    dqn.store_transition(s, action, reward, s_, done)
+                else:
+                    print("Don't save this transition into replay buffer")
+                    dqn.steps_done -= 1
+                is_stopped = True
+                done = True
+            else:
+                is_stopped = False
+                dqn.store_transition(s, action, reward, s_, done)
+            
+            prev_position = {
+                'x': s_[0],
+                'y': s_[1],
+                'z': s_[2]
+            }
+            
+            # Consider whether colliding to obstacle (signal, static obstacle, v.v) or not
+            if collide_with_obstacle == True:
+                dis_x = pre_pos_obstacle_collision['x'] - s_[0]
+                dis_y = pre_pos_obstacle_collision['y'] - s_[1]
+                dis_z = pre_pos_obstacle_collision['z'] - s_[2]
+                dis_ = math.sqrt(dis_x ** 2 + dis_y ** 2 + dis_z ** 2)
+                
+                if dis_ <= 2:
+                    print(80*'*')
+                    print("Stop because of colliding to obstacles")
+                    print(80*'*')
+                    done = True
+            
+            if obstacle_uid == 'OBSTACLE':
+                print(80*'*')
+                print("Colliding with obstalces")
+                print(80*'*')
+                collide_with_obstacle = True
+            else:
+                collide_with_obstacle = False
+            
+            pre_pos_obstacle_collision = {
+                'x': s_[0],
+                'y': s_[1],
+                'z': s_[2],
+            }
+
+            # print('>>>>>step, action, reward, collision_probability, DTO, ETTC, JERK, action_description, done: ', step, action,
+            #         reward, round(proC, 6), round(DTO, 6), round(ETTC, 6), round(JERK, 6),
+            #         "<" + action_description + ">",
+            #         done)
+            
+            print('>>>>>step, action, reward, collision_probability, action_description, done: ', step, action,
+                    reward, round(proC, 6), "<" + action_description + ">", done)
+            
+            # pd.DataFrame(
+            #     [[i_episode, step, s, action, reward, proC, proC_list, DTO, ETTC, JERK, DTO_list, ETTC_list, JERK_list, action_description, done]]).to_csv(
+            #     log_name,
+            #     mode='a',
+            #     header=False, index=None)
+            
+            pd.DataFrame(
+                [[i_episode, step, s, action, reward, proC, proC_list, action_description, done]]).to_csv(
+                log_name,
+                mode='a',
+                header=False, index=None)
+
+            ep_r += reward
+            if dqn.memory_counter > HyperParameter['MEMORY_SIZE']:
+                dqn.learn()
+                if done:
+                    print('Ep: ', i_episode,
+                            '| Ep_r: ', round(ep_r, 2))
+
+            if (i_episode + 1) % 5 == 0:
+                torch.save(dqn.eval_net.state_dict(),
+                            folder_name + 'eval_net_' + str(
+                                i_episode + 1) + '_road' + road_num + '.pt')
+                torch.save(dqn.target_net.state_dict(),
+                            folder_name + 'target_net_' + str(
+                                i_episode + 1) + '_road' + road_num + '.pt')
+                
+                with open(folder_name + 'memory_buffer_' + str(
+                                i_episode + 1) + '_road' + road_num + '.pkl', "wb") as file:
+                    pickle.dump(dqn.buffer_memory, file)
+                    
+                with open(folder_name + 'rl_network_' + str(
+                                i_episode + 1) + '_road' + road_num + '.pkl', "wb") as file:
+                    pickle.dump(dqn, file)
 
             if done:
                 print("Restart episode")
