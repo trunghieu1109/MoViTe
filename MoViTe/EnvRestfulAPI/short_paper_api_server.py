@@ -54,8 +54,9 @@ CONTROL = False
 NPC_QUEUE = queue.Queue(maxsize=10)
 collision_speed = 0  # 0 indicates there is no collision occurred.
 collision_uid = "No collision"
+isCollisionAhead = False
 prev_acc = 0
-time_offset = 9 # add time offset
+time_offset = -5 # add time offset
 pedes_prev_pos = {}
 
 current_lane = {
@@ -81,10 +82,10 @@ prefix = '/deepqtest/lgsvl-api/'
 
 # setup connect to apollo
 
-APOLLO_HOST = '70.55.143.61'  # or 'localhost'
-PORT = 41181
-DREAMVIEW_PORT = 41330
-BRIDGE_PORT = 41229
+APOLLO_HOST = '112.137.129.158'  # or 'localhost'
+PORT = 8966
+DREAMVIEW_PORT = 9988
+BRIDGE_PORT = 9090
 
 msg_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 server_address = (APOLLO_HOST, PORT)
@@ -107,19 +108,63 @@ def on_collision(agent1, agent2, contact):
     name2 = agent2.__dict__.get('name') if agent2 is not None else "OBSTACLE"
     uid = agent2.__dict__.get('uid') if agent2 is not None else "OBSTACLE"
     print("{} collided with {} at {}".format(name1, name2, contact))
+    if agent2 is not None:
+        print("AV speed {}, NPC speed {} ".format(agent1.state.speed, agent2.state.speed))
     global collision_object
     global collision_tag
     global collision_speed
     global collision_uid
+    global isCollisionAhead
     collision_uid = uid
     collision_object = name2
     collision_tag = True
+    
+    # raise evaluator.TestException("Ego collided with {}".format(agent2))
     try:
         collision_speed = agent1.state.speed
+        
+        if name2 != 'OBSTACLE' and not isinstance(agent2, NpcVehicle):
+            ego_pos = agent1.state.position
+            ego_rot = agent1.state.rotation
+            
+            yaw_rad = np.deg2rad(ego_rot.y)
+            
+            ego_dir = ego_rot
+    
+            ego_dir.x = np.sin(yaw_rad)
+            ego_dir.z = np.cos(yaw_rad)
+            
+            # ego_bbox = agent1.bounding_box
+            length = 4.7
+            
+            # print("Ego length: ", length)
+            # print("Ego rot: ", ego_rot)
+            # print("Ego pos: ", ego_pos)
+            
+            vel_ = math.sqrt(ego_dir.x ** 2 + ego_dir.z ** 2)
+            ahd_pt = ego_pos + (length / 2) / vel_ * ego_dir 
+            
+            a = ego_dir.x 
+            b = ego_dir.z
+            c = - a * ahd_pt.x - b * ahd_pt.z
+            
+            # print("line: ", a, b, c)
+            
+            pedes_pos = agent2.state.position
+            # print("pedes pos: ", pedes_pos)
+            
+            val_ego = a * ego_pos.x + b * ego_pos.z +c
+            val_pedes = a * pedes_pos.x + b * pedes_pos.z + c
+            
+            # print("val_ego: ", val_ego)
+            # print("val_pedes: ", val_pedes)
+            
+            if val_ego * val_pedes <= 0:
+                isCollisionAhead = True            
+            
     except KeyError:
         collision_speed = -1
         print('KeyError')
-
 # check whether there is collision or not
 
 def get_boundary_value(boundary, position):
@@ -227,6 +272,7 @@ def calculate_metrics(agents, ego, uid = None):
     global collision_object
     global collision_speed
     global collision_uid
+    global isCollisionAhead
     global prev_acc
     global pedes_prev_pos
 
@@ -235,6 +281,10 @@ def calculate_metrics(agents, ego, uid = None):
     collision_speed_ = 0
     collision_type = "None"
     collision_uid = "No collision"
+    isCollisionAhead = False
+    spd_bf_col = 0
+    isFirstCollision = True
+    pedes_mov_fw_to = False
 
     print("Calculating metrics ....")
 
@@ -260,7 +310,16 @@ def calculate_metrics(agents, ego, uid = None):
         # run simulator
         # print("Running simulator ....")
         for k in range(0, int(time_step / sliding_step)):
+            
+            spd_bf_col = ego.state.speed
+            
             sim.run(time_limit=sliding_step)  # , time_scale=2
+            
+            if collision_tag and isFirstCollision:
+                print("Ego speed before collision: ", spd_bf_col)
+                isFirstCollision = False
+                if spd_bf_col < 0.5:
+                    pedes_mov_fw_to = True
             
             if uid:
                 if collision_tag:
@@ -342,7 +401,7 @@ def calculate_metrics(agents, ego, uid = None):
             time.sleep(0.5)
 
     # if SAVE_SCENARIO:
-    collision_type, collision_speed_, collision_uid_ = get_collision_info()
+    collision_type, collision_speed_, collision_uid_, isCollisionAhead_ = get_collision_info()
     if collision_speed_ == -1:
         collision_speed_ = speed
         
@@ -356,7 +415,8 @@ def calculate_metrics(agents, ego, uid = None):
     JERK = round(max(JERK_list), 6)
     probability = round(max(probability_list), 6)
     
-    return {'ETTC': ETTC_list, 'distance': distance_list, 'JERK': JERK_list, 'collision_uid': collision_uid_, 'probability': probability_list, "sudden_appearance": sudden_appearance, "overlapping": overlapping, 'position_list': position_list, 'generated_uid': uid} 
+    return {'ETTC': ETTC_list, 'distance': distance_list, 'JERK': JERK_list, 'collision_uid': collision_uid_, 'probability': probability_list, "sudden_appearance": sudden_appearance, 
+            "overlapping": overlapping, 'position_list': position_list, 'generated_uid': uid, 'isCollisionAhead': isCollisionAhead_, 'pedes_mov_fw_to': pedes_mov_fw_to} 
 
 
 @app.route('/LGSVL')
@@ -386,12 +446,16 @@ def get_collision_info():
     global collision_object
     global collision_speed
     global collision_uid
+    global isCollisionAhead
     global JERK
 
     collision_info = str(collision_object)
     collision_speed_ = collision_speed
 
     # collision_object = None
+    
+    
+    isCollisionAhead_ = isCollisionAhead
     collision_speed = 0
     JERK = 0
     collision_type = 'None'
@@ -401,7 +465,7 @@ def get_collision_info():
         collision_type = "npc_vehicle"
     if collision_info in pedestrian:
         collision_type = "pedestrian"
-    return collision_type, collision_speed_, collision_uid
+    return collision_type, collision_speed_, collision_uid, isCollisionAhead_
 
 
 @app.route('/LGSVL/SetObTime', methods=['POST'])
