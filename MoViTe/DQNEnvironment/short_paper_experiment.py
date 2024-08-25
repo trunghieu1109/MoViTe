@@ -23,6 +23,9 @@ def execute_action(action_id):
     sudden_appearance = False
     overlapping = False
     position_list = []
+    isCollisionAhead = False
+    collision_speed = 0
+    pedes_mov_fw_to = False
     
     try:
         proC_list = response.json()['probability']
@@ -30,11 +33,13 @@ def execute_action(action_id):
         sudden_appearance = response.json()['sudden_appearance']
         overlapping = response.json()['overlapping']
         position_list = response.json()['position_list']
+        isCollisionAhead = response.json()['isCollisionAhead']
+        pedes_mov_fw_to = response.json()['pedes_mov_fw_to']
     except Exception as e:
         print(e)
         proC_list = [-1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -1.0]
         
-    return proC_list, obstacle_uid, sudden_appearance, overlapping, position_list
+    return proC_list, obstacle_uid, sudden_appearance, overlapping, position_list, isCollisionAhead, pedes_mov_fw_to
 
 
 latitude_space = []
@@ -92,7 +97,7 @@ def calculate_reward(action_id):
     global JERK_threshold
     
     # proC_list, DTO_list, ETTC_list, JERK_list, obstacle_uid = execute_action(action_id)
-    proC_list, obstacle_uid, sudden_appearance, overlapping, position_list = execute_action(action_id)
+    proC_list, obstacle_uid, sudden_appearance, overlapping, position_list, isCollisionAhead, pedes_mov_fw_to = execute_action(action_id)
     observation = None
     action_reward = 0
     
@@ -132,7 +137,7 @@ def calculate_reward(action_id):
   
     action_reward = collision_reward
             
-    return observation, action_reward, collision_probability, episode_done, proC_list, obstacle_uid, collision_info, col_uid, sudden_appearance, overlapping, position_list
+    return observation, action_reward, collision_probability, episode_done, proC_list, obstacle_uid, collision_info, col_uid, sudden_appearance, overlapping, position_list, isCollisionAhead, pedes_mov_fw_to
     # return observation, action_reward, collision_probability, DTO, ETTC, JERK, episode_done, proC_list, DTO_list, ETTC_list, JERK_list, obstacle_uid
 
 
@@ -188,14 +193,14 @@ for loop in range(0, 1):
 
     print("Number of actions: ", action_space_size)
 
-    current_eps = str(750)
+    current_eps = str(355)
     road_num = str(3)
 
     file_name = str(int(time.time()))
 
     dqn = DQN()
     
-    folder_name = 'short_paper_sanfrancisco_road3_rm_repeated_pedes_col'
+    folder_name = 'short_paper_sanfrancisco_road3_standard_ver_2'
     
     log_path = '../ExperimentData/Random-or-Non-random Analysis/{}/'.format(folder_name)
     model_path = './model/{}/'.format(folder_name)
@@ -209,7 +214,7 @@ for loop in range(0, 1):
     dqn.target_net.load_state_dict(torch.load(model_path + 'target_net_' + current_eps + '_road' + road_num + '.pt'))
 
     title = ["Episode", "State", "Action", "Choosing_Type", "Collision_Probability",
-            "Collision_uid", "Collision_Probability_Per_Step", "Sudden Appearance", "Overlapping", "Repeated Collision", "Done"]
+            "Collision_uid", "Collision_Probability_Per_Step", "Sudden Appearance", "Overlapping", "Repeated Collision", "Unreal Pedes Col", "Done"]
     df_title = pd.DataFrame([title])
     df_title.to_csv(log_path + 'dqn_6s_road3_' + current_eps + 'eps_' + file_name + '_0.2eps.csv', mode='w', header=False, index=None)
 
@@ -229,8 +234,7 @@ for loop in range(0, 1):
     position_list_ = []
     repeated_collision_ = []
     isCollision_list_ = []
-    
-    prev_collision_object = ""
+    unreal_pedes_col_ = []
     
     while True:
         # Random select action to execute
@@ -246,7 +250,7 @@ for loop in range(0, 1):
         
             try:
                 action, type = dqn.choose_action(s, current_step, previous_weather_and_time_step)
-                _, _, probability, done, collision_probability_per_step, collision_uid, info, _, sudden_appearance, overlapping, position_list = calculate_reward(action)
+                _, _, probability, done, collision_probability_per_step, collision_uid, info, _, sudden_appearance, overlapping, position_list, isCollisionAhead, pedes_mov_fw_to = calculate_reward(action)
             except json.JSONDecodeError as e:
                 print(e)    
                 retry = True 
@@ -263,13 +267,6 @@ for loop in range(0, 1):
         
         if probability == 1.0:
             isCollision = True
-            
-        if info != 'None':
-            if info == 'pedestrian':
-                if prev_collision_object == 'pedestrian':
-                    done = True
-                    probability = 0
-            prev_collision_object = info
         
         isCollision_list = []
         
@@ -285,6 +282,7 @@ for loop in range(0, 1):
         position_list_.append(position_list)
         
         repeated_collision = False
+        unreal_pedes_col = False
         
         # 0. No Collision
         # 1. Collision
@@ -300,6 +298,11 @@ for loop in range(0, 1):
                 for npc_uid in time_step:
                     if npc_uid == collision_uid:
                         if npc_uid in npc_interaction_info:
+                            
+                            if info == 'pedestrian' and not no_check_repeated:
+                                done = True
+                                repeated_collision = True
+                            
                             if npc_interaction_info[npc_uid]['collision'] and not no_check_repeated:
                                 repeated_collision = True
                             else:
@@ -318,7 +321,18 @@ for loop in range(0, 1):
                 
         repeated_collision_.append(repeated_collision)
         
-        print('api_id, probability, sudden_appearance, overlapping, repeated_collision, done: ', action, probability, sudden_appearance, overlapping, repeated_collision, done)
+        if float(probability) == 1.0:
+            if not isCollisionAhead:
+                unreal_pedes_col = True
+                print(20*'*', "Not collision ahead", 20*'*')
+            else:
+                if pedes_mov_fw_to:
+                    unreal_pedes_col = True
+                    print(20*'*', "Pedes move forward to ego", 20*'*')
+                    
+        unreal_pedes_col_.append(unreal_pedes_col)
+        
+        print('api_id, probability, sudden_appearance, overlapping, repeated_collision, unreal_pedes_col, done: ', action, probability, sudden_appearance, overlapping, repeated_collision, unreal_pedes_col, done)
 
         step += 1
         if done:
@@ -334,7 +348,7 @@ for loop in range(0, 1):
                     print("Episode complete")
                     for iter in range(0, len(state_)):
                         pd.DataFrame([[iteration, state_[iter], action_[iter], type_[iter], probability_[iter], collision_uid_[iter], 
-                                        collision_probability_per_step_[iter], sudden_appearance_[iter], overlapping_[iter], repeated_collision_[iter], done_[iter]]]).to_csv(
+                                        collision_probability_per_step_[iter], sudden_appearance_[iter], overlapping_[iter], repeated_collision_[iter], unreal_pedes_col_[iter], done_[iter]]]).to_csv(
                             log_path + 'dqn_6s_road3_' + current_eps + 'eps_' + file_name + '_0.2eps.csv',
                             mode='a',
                             header=False, index=None)
@@ -343,7 +357,7 @@ for loop in range(0, 1):
                 print("Episode complete")
                 for iter in range(0, len(state_)):
                     pd.DataFrame([[iteration, state_[iter], action_[iter], type_[iter], probability_[iter], collision_uid_[iter], 
-                                    collision_probability_per_step_[iter], sudden_appearance_[iter], overlapping_[iter], repeated_collision_[iter], done_[iter]]]).to_csv(
+                                    collision_probability_per_step_[iter], sudden_appearance_[iter], overlapping_[iter], repeated_collision_[iter], unreal_pedes_col_[iter], done_[iter]]]).to_csv(
                         log_path + 'dqn_6s_road3_' + current_eps + 'eps_' + file_name + '_0.2eps.csv',
                         mode='a',
                         header=False, index=None)
@@ -367,6 +381,7 @@ for loop in range(0, 1):
             position_list_ = []
             repeated_collision_ = []
             isCollision_list_ = []
+            unreal_pedes_col_ = []
         
             print("Start episode ", iteration)
             if iteration == 16:
