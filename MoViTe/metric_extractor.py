@@ -36,6 +36,7 @@ def metrics_extract(exp_file):
     sudden_appearance_ = 0
     repeated_collision_ = 0
     overlapping_ = 0
+    normal_collision = 0
     
     for index, row in df.iterrows():
         
@@ -56,7 +57,7 @@ def metrics_extract(exp_file):
         per_in = None
  
         freq[int(action)] += 1
- 
+
         if reward > 0: 
             if reward == 1.0:
                 
@@ -66,6 +67,8 @@ def metrics_extract(exp_file):
                        
                 #     if diff > 2:
                 #         distinct_collision += 1
+                #     else:
+                #         repeated_collision_ += 1
                            
                 # else:
                 #     distinct_collision += 1
@@ -73,7 +76,7 @@ def metrics_extract(exp_file):
                 # prev_position = np.array([float(state_[0]), float(state_[1]), float(state_[2])])
                 # prev_uid = uid
                    
-                # collision += 1
+                normal_collision += 1
             
                 if not overlapping and not sudden_appearance and not repeated_collision:
                     if prev_uid == uid:
@@ -82,6 +85,8 @@ def metrics_extract(exp_file):
                         
                         if diff > 2:
                             distinct_collision += 1
+                        else:
+                            repeated_collision_ += 1
                             
                     else:
                         distinct_collision += 1
@@ -158,12 +163,12 @@ def metrics_extract(exp_file):
         per_info.append(per_in)
         reward_info.append(reward)
                 
-    print("Collision: ", collision, "\nPotential Collision: ", potential_collision, "\nDistinct Collision: ", distinct_collision, "\nAverage time to collision: ", avg_ttc / max(cnt_eps_collision, 1))
+    print("Collision: ", normal_collision, "\nPotential Collision: ", potential_collision, "\nDistinct Collision: ", distinct_collision, "\nAverage time to collision: ", avg_ttc / max(cnt_eps_collision, 1))
     print("Sudden Appearance: ", sudden_appearance_)
     print("Overlapping: ", overlapping_)
     print("Repeated Collision: ", repeated_collision_)
-    print("Collision by model: ", collision_by_model_choosing_action)
-    print("Collision randomly: ", collision_by_random_action)
+    # print("Collision by model: ", collision_by_model_choosing_action)
+    # print("Collision randomly: ", collision_by_random_action)
     
     freq /= np.sum(freq)
     
