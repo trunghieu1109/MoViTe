@@ -265,7 +265,7 @@ for loop in range(0, 5):
                 
         repeated_collision_.append(repeated_collision)
         
-        if float(probability) == 1.0:
+        if float(probability) == 1.0 and info == 'pedestrian':
             if not isCollisionAhead:
                 unreal_pedes_col = True
                 print(20*'*', "Not collision ahead", 20*'*')

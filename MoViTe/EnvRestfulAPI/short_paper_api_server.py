@@ -315,10 +315,22 @@ def calculate_metrics(agents, ego, uid = None):
             
             sim.run(time_limit=sliding_step)  # , time_scale=2
             
+            collision_info_ = str(collision_object)
+            collision_type_ = 'None'
+            
+            if collision_info_ == 'OBSTACLE':
+                collision_type_ = "obstacle"
+            if collision_info_ in npc_vehicle:
+                collision_type_ = "npc_vehicle"
+            if collision_info_ in pedestrian:
+                collision_type_ = "pedestrian"
+            
+            # print("Collision Info: ", collision_type_)
+            
             if collision_tag and isFirstCollision:
                 print("Ego speed before collision: ", spd_bf_col)
                 isFirstCollision = False
-                if spd_bf_col < 0.5:
+                if spd_bf_col < 0.5 and collision_type_ == 'pedestrian':
                     pedes_mov_fw_to = True
             
             if uid:
