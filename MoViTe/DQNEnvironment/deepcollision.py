@@ -157,8 +157,6 @@ class DQN(object):
                 HyperParameter['EPS_START'] - HyperParameter['EPS_END']) * math.exp(
             -1. * self.steps_done / HyperParameter['EPS_DECAY'])
         
-        # eps_threshold = 0.2
-        
         print("eps threshold:", eps_threshold)
         
         action = None
@@ -374,7 +372,7 @@ if __name__ == '__main__':
     # if int(road_num) >= 2:
     #     dqn.eval_net.load_state_dict(torch.load('./model/DeepCollision_'+second+'s/eval_net_600_road'+str(int(road_num)-1)+'.pt'))
     
-    folder_path = './model/DeepCollision_6s/'
+    folder_path = './model/DeepCollision_6s_SanFrancisco_road2/'
     
     if not os.path.isdir(folder_path):
         print("Create dir", folder_path)
@@ -393,7 +391,7 @@ if __name__ == '__main__':
     print('\nCollecting experience...')
     road_num_int = int(road_num)
 
-    while road_num_int <= 1:
+    while road_num_int <= 2:
         road_num = str(road_num_int)
 
         requests.post("http://localhost:8933/LGSVL/SetObTime?observation_time=" + '6')

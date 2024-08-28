@@ -134,7 +134,7 @@ def get_environment_state():
 
 
 for loop in range(0, 5):
-    requests.post("http://localhost:8933/LGSVL/LoadScene?scene=12da60a7-2fc9-474d-a62a-5cc08cb97fe8&road_num=" + '3')
+    requests.post("http://localhost:8933/LGSVL/LoadScene?scene=12da60a7-2fc9-474d-a62a-5cc08cb97fe8&road_num=" + '2')
     requests.post("http://localhost:8933/LGSVL/SetObTime?observation_time=6")
 
     action_space = get_action_space()['command']
@@ -143,13 +143,13 @@ for loop in range(0, 5):
     print("Number of actions: ", action_space_size)
 
     current_eps = str(600)
-    road_num = str(3)
+    road_num = str(2)
 
     file_name = str(int(time.time()))
 
     dqn = DQN()
     
-    folder_name = 'DeepCollision_6s_SanFrancisco_mod_proc'
+    folder_name = 'DeepCollision_6s_SanFrancisco_road2'
     
     log_path = '../ExperimentData/Random-or-Non-random Analysis/{}/'.format(folder_name)
     model_path = './model/{}/'.format(folder_name)
@@ -164,7 +164,7 @@ for loop in range(0, 5):
 
     title = ["Episode", "State", "Action", "Choosing_Type", "Collision_Probability", "Collision_uid", "Sudden Appearance", "Overlapping", "Repeated Collision", "Collision_Probability_Per_Step", 'Unreal Pedes Col', "Done"]
     df_title = pd.DataFrame([title])
-    df_title.to_csv(log_path + 'dqn_6s_road3_' + current_eps + 'eps_' + file_name + '_0.2eps.csv', mode='w', header=False, index=None)
+    df_title.to_csv(log_path + 'dqn_6s_road2_' + current_eps + 'eps_' + file_name + '_0.2eps.csv', mode='w', header=False, index=None)
 
     iteration = 0
     step = 0
@@ -282,7 +282,7 @@ for loop in range(0, 5):
         if done:
             # break
             # requests.post("http://localhost:8933/LGSVL/LoadScene?scene=aae03d2a-b7ca-4a88-9e41-9035287a12cc&road_num=" + '1')
-            requests.post("http://localhost:8933/LGSVL/LoadScene?scene=12da60a7-2fc9-474d-a62a-5cc08cb97fe8&road_num=" + '3')
+            requests.post("http://localhost:8933/LGSVL/LoadScene?scene=12da60a7-2fc9-474d-a62a-5cc08cb97fe8&road_num=" + '2')
 
             print("Length of episode: ", len(state_))
             if len(state_) <= 5:
@@ -292,7 +292,7 @@ for loop in range(0, 5):
                     print("Episode complete")
                     for iter in range(0, len(state_)):
                         pd.DataFrame([[iteration, state_[iter], action_[iter], type_[iter], probability_[iter], collision_uid_[iter], sudden_appearance_[iter], overlapping_[iter], repeated_collision_[iter], collision_probability_per_step_[iter], unreal_pedes_col_[iter], done_[iter]]]).to_csv(
-                            log_path + 'dqn_6s_road3_' + current_eps + 'eps_' + file_name + '_0.2eps.csv',
+                            log_path + 'dqn_6s_road2_' + current_eps + 'eps_' + file_name + '_0.2eps.csv',
                             mode='a',
                             header=False, index=None)
                     iteration += 1
@@ -300,7 +300,7 @@ for loop in range(0, 5):
                 print("Episode complete")
                 for iter in range(0, len(state_)):
                     pd.DataFrame([[iteration, state_[iter], action_[iter], type_[iter], probability_[iter], collision_uid_[iter], sudden_appearance_[iter], overlapping_[iter], repeated_collision_[iter], collision_probability_per_step_[iter], unreal_pedes_col_[iter], done_[iter]]]).to_csv(
-                        log_path + 'dqn_6s_road3_' + current_eps + 'eps_' + file_name + '_0.2eps.csv',
+                        log_path + 'dqn_6s_road2_' + current_eps + 'eps_' + file_name + '_0.2eps.csv',
                         mode='a',
                         header=False, index=None)
                 iteration += 1

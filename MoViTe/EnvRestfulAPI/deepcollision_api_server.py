@@ -638,7 +638,7 @@ def load_scene():
 
     sensors = EGO.get_sensors()
     sim.get_agents()[0].on_collision(on_collision)
-    sim.set_time_of_day(5, fixed=True)
+    sim.set_time_of_day(19, fixed=True)
 
     # ss = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     data = {'road_num': road_num}
@@ -978,13 +978,13 @@ def time_of_day():
     global REALISTIC
     time = request.args.get('time_of_day')
     # print(time)
-    day_time = 10  # initial time: 10
+    day_time = 19  # initial time: 10
     if time == 'Morning':
-        day_time = 10
+        day_time = 19
     elif time == 'Noon':
-        day_time = 14
+        day_time = 23
     elif time == 'Evening':
-        day_time = 20
+        day_time = 5
     sim.set_time_of_day(day_time, fixed=True)
     # sim.get_agents()[0].on_collision(on_collision)
     REALISTIC = False
@@ -1401,7 +1401,7 @@ def get_environment_state():
     state_dict = {'x': position.x, 'y': position.y, 'z': position.z,
                   'rx': rotation.x, 'ry': rotation.y, 'rz': rotation.z,
                   'rain': weather.rain, 'fog': weather.fog, 'wetness': weather.wetness,
-                  'timeofday': sim.time_of_day, 'signal': interpreter_signal(signal.current_state),
+                  'timeofday': (sim.time_of_day - 9 + 24) % 24, 'signal': interpreter_signal(signal.current_state),
                   'speed': speed}
     
     # state_dict = {'x': position.x, 'y': position.y, 'z': position.z,
