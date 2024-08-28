@@ -330,7 +330,7 @@ def calculate_metrics(agents, ego, uid = None):
             if collision_tag and isFirstCollision:
                 print("Ego speed before collision: ", spd_bf_col)
                 isFirstCollision = False
-                if spd_bf_col < 0.5 and collision_type_ == 'pedestrian':
+                if spd_bf_col < 1.0 and collision_type_ == 'pedestrian':
                     pedes_mov_fw_to = True
             
             if uid:
@@ -535,16 +535,16 @@ def load_scene():
             state.transform.rotation.y = 81
             state.transform.rotation.x = 0
         else:
-            state.transform.position.x = -40.3
-            state.transform.position.y = -1.4
-            state.transform.position.z = -11.8
-            state.transform.rotation.y = 105
-            state.transform.rotation.x = 1
+            state.transform.position.x = 352.4
+            state.transform.position.y = -7.6
+            state.transform.position.z = -22.6
+            state.transform.rotation.y = 195
+            state.transform.rotation.x = 360
     elif road_num == '2':
-        state.transform.position.x = -442.1
+        state.transform.position.x = -346.8
         state.transform.position.y = 10.2
-        state.transform.position.z = -65.1
-        state.transform.rotation.y = 170
+        state.transform.position.z = 63.4
+        state.transform.rotation.y = 314
         state.transform.rotation.x = 0
     elif road_num == '3':
         state.transform.position.x = -62.7
@@ -578,10 +578,10 @@ def load_scene():
                 "http://localhost:8933/LGSVL/SetDestination?des_x=-494.3&des_y=10.2&des_z=294.7")
         else:
             requests.post(
-                "http://localhost:8933/LGSVL/SetDestination?des_x=348.2&des_y=-7.5&des_z=-64.4")
+                "http://localhost:8933/LGSVL/SetDestination?des_x=-16.6&des_y=-1.9&des_z=-49.3")
     elif road_num == '2':
         requests.post(
-            "http://localhost:8933/LGSVL/SetDestination?des_x=-384.6&des_y=10.2&des_z=-357.8")
+            "http://localhost:8933/LGSVL/SetDestination?des_x=-449.8&des_y=10.2&des_z=0.0")
     elif road_num == '3':
         requests.post(
             "http://localhost:8933/LGSVL/SetDestination?des_x=-208.2&des_y=10.2&des_z=-181.6")

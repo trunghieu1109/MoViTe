@@ -37,6 +37,7 @@ def metrics_extract(exp_file):
     repeated_collision_ = 0
     overlapping_ = 0
     normal_collision = 0
+    unreal_pedes_col_ = 0
     
     for index, row in df.iterrows():
         
@@ -51,6 +52,7 @@ def metrics_extract(exp_file):
         state = row['State'][1:-1].split(",")[0].split(" ")
         state_ = [s for s in state if s != ""]
         uid = row["Collision_uid"]
+        unreal_pedes_col = row["Unreal Pedes Col"]
         
         # type = row["Choosing_Type"]
         
@@ -78,7 +80,7 @@ def metrics_extract(exp_file):
                    
                 normal_collision += 1
             
-                if not overlapping and not sudden_appearance and not repeated_collision:
+                if not overlapping and not sudden_appearance and not repeated_collision and not unreal_pedes_col:
                     if prev_uid == uid:
                         new_pos = np.array([float(state_[0]), float(state_[1]), float(state_[2])])
                         diff = np.linalg.norm(prev_position - new_pos)
@@ -136,6 +138,10 @@ def metrics_extract(exp_file):
                         overlapping_ += 1
                         print(uid)
                         
+                    if unreal_pedes_col:
+                        unreal_pedes_col_ += 1
+                        print(uid)
+                        
             else:
                 if reward > 0.5:
                     potential_collision += 1
@@ -167,6 +173,7 @@ def metrics_extract(exp_file):
     print("Sudden Appearance: ", sudden_appearance_)
     print("Overlapping: ", overlapping_)
     print("Repeated Collision: ", repeated_collision_)
+    print("Unreal Pedes Col: ", unreal_pedes_col_)
     # print("Collision by model: ", collision_by_model_choosing_action)
     # print("Collision randomly: ", collision_by_random_action)
     
