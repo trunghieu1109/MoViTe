@@ -541,9 +541,9 @@ def load_scene():
             state.transform.rotation.y = 195
             state.transform.rotation.x = 360
     elif road_num == '2':
-        state.transform.position.x = -346.8
+        state.transform.position.x = -328.1
         state.transform.position.y = 10.2
-        state.transform.position.z = 63.4
+        state.transform.position.z = 45.5
         state.transform.rotation.y = 314
         state.transform.rotation.x = 0
     elif road_num == '3':
@@ -581,7 +581,7 @@ def load_scene():
                 "http://localhost:8933/LGSVL/SetDestination?des_x=-16.6&des_y=-1.9&des_z=-49.3")
     elif road_num == '2':
         requests.post(
-            "http://localhost:8933/LGSVL/SetDestination?des_x=-449.8&des_y=10.2&des_z=0.0")
+            "http://localhost:8933/LGSVL/SetDestination?des_x=-445.7&des_y=10.2&des_z=-22.7")
     elif road_num == '3':
         requests.post(
             "http://localhost:8933/LGSVL/SetDestination?des_x=-208.2&des_y=10.2&des_z=-181.6")
@@ -1010,11 +1010,11 @@ def add_pedestrian_cross_road():
     else:
         offset = 5.0 * right
 
-    wp = [lgsvl.WalkWaypoint(sim.map_point_on_lane(ego_transform.position + offset + 30 * forward).position, 1),
-          lgsvl.WalkWaypoint(sim.map_point_on_lane(ego_transform.position - offset + 30 * forward).position, 1)]
+    wp = [lgsvl.WalkWaypoint(sim.map_point_on_lane(ego_transform.position + offset + 40 * forward).position, 1),
+          lgsvl.WalkWaypoint(sim.map_point_on_lane(ego_transform.position - offset + 40 * forward).position, 1)]
 
     npc_state.transform.position = sim.map_point_on_lane(
-        ego_transform.position + offset + 30.0 * forward).position
+        ego_transform.position + offset + 40.0 * forward).position
 
     generate = get_no_conflict_position(
         npc_state.transform.position, 'pedestrian')

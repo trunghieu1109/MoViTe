@@ -31,9 +31,9 @@ requests.post(f"http://localhost:8933/LGSVL/LoadScene?scene={scene}&road_num=" +
 file_name = str(int(time.time()))
 
 goal = [
-    -208.2, 
+    -445.7, 
     10.2, 
-    -181.6
+    -22.7
 ]
 
 def get_environment_state():
