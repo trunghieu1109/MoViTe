@@ -611,10 +611,10 @@ def load_scene():
             state.transform.rotation.y = 105
             state.transform.rotation.x = 1
     elif road_num == '2':
-        state.transform.position.x = -442.1
+        state.transform.position.x = -328.1
         state.transform.position.y = 10.2
-        state.transform.position.z = -65.1
-        state.transform.rotation.y = 170
+        state.transform.position.z = 45.5
+        state.transform.rotation.y = 314
         state.transform.rotation.x = 0
     elif road_num == '3':
         state.transform.position.x = -62.7
@@ -656,7 +656,7 @@ def load_scene():
                 "http://localhost:8933/LGSVL/SetDestination?des_x=348.2&des_y=-7.5&des_z=-64.4")
     elif road_num == '2':
         requests.post(
-            "http://localhost:8933/LGSVL/SetDestination?des_x=-384.6&des_y=10.2&des_z=-357.8")
+            "http://localhost:8933/LGSVL/SetDestination?des_x=-445.7&des_y=10.2&des_z=-22.7")
     elif road_num == '3':
         requests.post(
             "http://localhost:8933/LGSVL/SetDestination?des_x=-208.2&des_y=10.2&des_z=-181.6")
