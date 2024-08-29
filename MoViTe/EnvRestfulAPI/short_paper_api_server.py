@@ -388,8 +388,9 @@ def calculate_metrics(agents, ego, uid = None):
                 'dis_to_ego': math.sqrt((state_.position.x - ego_state.position.x) ** 2 + (state_.position.y - ego_state.position.y) ** 2 + (state_.position.z - ego_state.position.z) ** 2)
             }
             
-            if not overlapping:
-                if abs(ego_state.position.y - state_.position.y) > 0.4:
+            if not overlapping and (state_.position.x != 0 or state_.position.y != 0 or state_.position.z != 0):
+                if abs(ego_state.position.y - state_.position.y) > 0.4 and agents[j].uid == collision_uid:
+                    print(20 * '*', 'Overlapping', 20 * '*')
                     overlapping = True
                 
             npc_state.append(state_)
