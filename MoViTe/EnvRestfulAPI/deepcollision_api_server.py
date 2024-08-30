@@ -372,7 +372,7 @@ def calculate_metrics(agents, ego, uid = None):
             if collision_tag and isFirstCollision:
                 print("Ego speed before collision: ", spd_bf_col)
                 isFirstCollision = False
-                if spd_bf_col < 0.5 and collision_type_ == 'pedestrian':
+                if spd_bf_col < 1.0 and collision_type_ == 'pedestrian':
                     pedes_mov_fw_to = True
             
             if uid:
