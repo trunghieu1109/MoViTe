@@ -524,11 +524,11 @@ def load_scene():
         './Transform/{}.pt'.format("road" + "4" + "_start"))
     if road_num == '1':
         if scene == 'bd77ac3b-fbc3-41c3-a806-25915c777022':
-            state.transform.position.x = 213.8
+            state.transform.position.x = 184.9
             state.transform.position.y = 35.7
-            state.transform.position.z = 122.8
+            state.transform.position.z = 93.4
             state.transform.rotation.y = 49
-            state.transform.rotation.x = 0
+            state.transform.rotation.x = 360
         elif scene == '12da60a7-2fc9-474d-a62a-5cc08cb97fe8':
             state.transform.position.x = -768.9
             state.transform.position.y = 10.2
@@ -572,7 +572,7 @@ def load_scene():
     if road_num == '1':
         if scene == 'bd77ac3b-fbc3-41c3-a806-25915c777022':
             requests.post(
-                "http://localhost:8933/LGSVL/SetDestination?des_x=338.4&des_y=35.5&des_z=286.9")
+                "http://localhost:8933/LGSVL/SetDestination?des_x=312.5&des_y=36.7&des_z=312.3")
 
         elif scene == '12da60a7-2fc9-474d-a62a-5cc08cb97fe8':
             requests.post(

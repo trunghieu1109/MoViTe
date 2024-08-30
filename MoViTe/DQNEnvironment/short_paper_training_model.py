@@ -24,16 +24,16 @@ reuse_mem_eps = ''
 start_eps = '0'
 end_eps = '200'
 
-road_num = '2'  # the Road Number
+road_num = '1'  # the Road Number
 second = '6'  # the experiment second
-scene = '12da60a7-2fc9-474d-a62a-5cc08cb97fe8'
+scene = 'bd77ac3b-fbc3-41c3-a806-25915c777022'
 requests.post(f"http://localhost:8933/LGSVL/LoadScene?scene={scene}&road_num=" + road_num)
 file_name = str(int(time.time()))
 
 goal = [
-    -445.7, 
-    10.2, 
-    -22.7
+    312.5, 
+    36.7, 
+    312.3
 ]
 
 def get_environment_state():
@@ -422,7 +422,7 @@ if __name__ == '__main__':
 
     dqn = DQN()
         
-    folder_name = './model/short_paper_sanfrancisco_road2_standard/'
+    folder_name = './model/short_paper_tartu_road1_standard/'
     reuse_folder = './model/short_paper_/'
     
     print("Folder name: ", folder_name)
