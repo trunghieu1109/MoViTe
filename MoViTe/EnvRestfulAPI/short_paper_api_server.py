@@ -56,7 +56,7 @@ collision_speed = 0  # 0 indicates there is no collision occurred.
 collision_uid = "No collision"
 isCollisionAhead = False
 prev_acc = 0
-time_offset = -5 # add time offset
+time_offset = 0 # add time offset
 pedes_prev_pos = {}
 
 current_lane = {
@@ -82,17 +82,17 @@ prefix = '/deepqtest/lgsvl-api/'
 
 # setup connect to apollo
 
-APOLLO_HOST = '112.137.129.158'  # or 'localhost'
-PORT = 8966
-DREAMVIEW_PORT = 9988
-BRIDGE_PORT = 9090
+APOLLO_HOST = '70.55.143.61'  # or 'localhost'
+PORT = 41211
+DREAMVIEW_PORT = 41081
+BRIDGE_PORT = 41048
 
 msg_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 server_address = (APOLLO_HOST, PORT)
 
 msg_socket.connect(server_address)
 
-map = 'sanfrancisco' # map: tartu, sanfrancisco, borregasave
+map = 'tartu' # map: tartu, sanfrancisco, borregasave
 
 lanes_map_file = "./map/{}_lanes.pkl".format(map)
 lanes_map = None
@@ -530,10 +530,10 @@ def load_scene():
             state.transform.rotation.y = 49
             state.transform.rotation.x = 360
         elif scene == '12da60a7-2fc9-474d-a62a-5cc08cb97fe8':
-            state.transform.position.x = -768.9
+            state.transform.position.x = -328.1
             state.transform.position.y = 10.2
-            state.transform.position.z = 224.1
-            state.transform.rotation.y = 81
+            state.transform.position.z = 45.5
+            state.transform.rotation.y = 314
             state.transform.rotation.x = 0
         else:
             state.transform.position.x = 352.4
@@ -542,12 +542,25 @@ def load_scene():
             state.transform.rotation.y = 195
             state.transform.rotation.x = 360
     elif road_num == '2':
-        state.transform.position.x = -328.1
-        state.transform.position.y = 10.2
-        state.transform.position.z = 45.5
-        state.transform.rotation.y = 314
-        state.transform.rotation.x = 0
-    elif road_num == '3':
+        if scene == 'bd77ac3b-fbc3-41c3-a806-25915c777022':
+            state.transform.position.x = -76.0
+            state.transform.position.y = 34.3
+            state.transform.position.z = 325.3
+            state.transform.rotation.y = 155
+            state.transform.rotation.x = 359
+        elif scene == '12da60a7-2fc9-474d-a62a-5cc08cb97fe8':
+            state.transform.position.x = -62.7
+            state.transform.position.y = 10.2
+            state.transform.position.z = -110.2
+            state.transform.rotation.y = 224
+            state.transform.rotation.x = 0
+        else:
+            state.transform.position.x = -40.3
+            state.transform.position.y = -1.4
+            state.transform.position.z = -11.8
+            state.transform.rotation.y = 105
+            state.transform.rotation.x = 1
+    else:
         state.transform.position.x = -62.7
         state.transform.position.y = 10.2
         state.transform.position.z = -110.2
@@ -576,14 +589,22 @@ def load_scene():
 
         elif scene == '12da60a7-2fc9-474d-a62a-5cc08cb97fe8':
             requests.post(
-                "http://localhost:8933/LGSVL/SetDestination?des_x=-494.3&des_y=10.2&des_z=294.7")
+                "http://localhost:8933/LGSVL/SetDestination?des_x=-445.7&des_y=10.2&des_z=-22.7")
         else:
             requests.post(
                 "http://localhost:8933/LGSVL/SetDestination?des_x=-16.6&des_y=-1.9&des_z=-49.3")
     elif road_num == '2':
-        requests.post(
-            "http://localhost:8933/LGSVL/SetDestination?des_x=-445.7&des_y=10.2&des_z=-22.7")
-    elif road_num == '3':
+        if scene == 'bd77ac3b-fbc3-41c3-a806-25915c777022':
+            requests.post(
+                "http://localhost:8933/LGSVL/SetDestination?des_x=93.8&des_y=34.5&des_z=382.2")
+
+        elif scene == '12da60a7-2fc9-474d-a62a-5cc08cb97fe8':
+            requests.post(
+                "http://localhost:8933/LGSVL/SetDestination?des_x=-208.2&des_y=10.2&des_z=-181.6")
+        else:
+            requests.post(
+                "http://localhost:8933/LGSVL/SetDestination?des_x=348.2&des_y=-7.5&des_z=-64.4")
+    else:
         requests.post(
             "http://localhost:8933/LGSVL/SetDestination?des_x=-208.2&des_y=10.2&des_z=-181.6")
     print(road_num)
@@ -592,6 +613,7 @@ def load_scene():
     sim.run(2)
 
     return 'load success'
+
 
 
 @app.route('/LGSVL/SaveTransform', methods=['POST'])
