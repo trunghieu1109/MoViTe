@@ -450,6 +450,9 @@ if __name__ == '__main__':
         with open(reuse_folder + 'memory_buffer_' + reuse_mem_eps + '_road' + road_num + '.pkl', "rb") as file:
             old_memory = pickle.load(file)
             
+        dqn.optimizer = torch.optim.Adam(dqn.eval_net.parameters(), lr=HyperParameter['lr'], weight_decay=HyperParameter['WEIGHT_DECAY'])
+        dqn.scheduler = torch.optim.lr_scheduler.LambdaLR(dqn.optimizer, lr_lambda=dqn.lr_lambda_)
+            
         dqn.buffer_memory = PrioritizedReplayBuffer(N_STATES, N_ACTIONS, HyperParameter["MEMORY_SIZE"], 0.01, 0.7, 0.4)
             
         for i in range(old_memory.real_size):
