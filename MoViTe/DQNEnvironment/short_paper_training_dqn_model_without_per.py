@@ -270,6 +270,8 @@ class DQN(object):
         
         print("Start Learning Deep Q Network")
         
+        print("New DQN Model")
+        
         print(80*'*')
         
         # target parameter update
@@ -286,20 +288,15 @@ class DQN(object):
         b_s_ = torch.FloatTensor(b_memory[:, -N_STATES:])
         
         # print("After processing reward: ", reward)
-        q_eval = self.eval_net.forward(b_s).gather(1, b_a)  # shape (batch, 1)
+        q_eval = self.eval_net(b_s).gather(1, b_a)  # shape (batch, 1)
+        # print("Q_eval: ", q_eval)
+        # print("Q_next: ", q_next)
         
-        q_action = self.eval_net.forward(b_s_).max(dim=1).indices
+        q_next = self.target_net(b_s_).detach()  # detach from graph, don't backpropagate
         
-        q_value = self.target_net.forward(b_s_).detach()  # detach from graph, don't backpropagate       
+        q_target = b_r + HyperParameter['GAMMA'] * q_next.max(1)[0].view(HyperParameter['BATCH_SIZE'], 1)  # shape (batch, 1)
+        # print("Q_target: ", q_target)
         
-        q_next = q_value.max(dim=1).values
-        for i in range(0, HyperParameter['BATCH_SIZE']):
-            q_next[i] = q_value[i][q_action[i]]
-            
-        q_next = q_next.view(-1, 1)
-        
-        q_target = b_r + HyperParameter['GAMMA'] * q_next  # shape (batch, 1)
-
         loss = self.loss_func(q_eval, q_target)
         
         pd.DataFrame([[self.learn_step_counter, self.optimizer.param_groups[0]['lr'], loss.item()]]).to_csv('./loss_log/loss_log_' + file_name + '.csv', 
@@ -429,7 +426,7 @@ if __name__ == '__main__':
 
     dqn = DQN()
         
-    folder_name = './model/ddqn_model_experiment_sanfrancisco_road3/'
+    folder_name = './model/dqn_model_experiment_sanfrancisco_road3/'
     reuse_folder = './model/short_paper_sanfrancisco_road3_standard_ver_4/'
     
     print("Folder name: ", folder_name)
