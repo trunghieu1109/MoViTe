@@ -17,20 +17,20 @@ DTO_threshold = 10 # (m)
 JERK_threshold = 5 # (m/s^2)
 
 current_eps = ''
-reuse_mem_eps = '285'
-start_eps = '285'
+reuse_mem_eps = '310'
+start_eps = '310'
 end_eps = '600'
 
-road_num = '3'  # the Road Number
+road_num = '2'  # the Road Number
 second = '6'  # the experiment second
 scene = '12da60a7-2fc9-474d-a62a-5cc08cb97fe8'
 requests.post(f"http://localhost:8933/LGSVL/LoadScene?scene={scene}&road_num=" + road_num)
 file_name = str(int(time.time()))
 
 goal = [
-    -208.2, 
+    -445.7, 
     10.2, 
-    -181.6
+    -22.7
 ]
 
 def get_environment_state():
@@ -429,8 +429,8 @@ if __name__ == '__main__':
 
     dqn = DQN()
         
-    folder_name = './model/ddqn_model_experiment_sanfrancisco_road3/'
-    reuse_folder = './model/short_paper_sanfrancisco_road3_standard_ver_4/'
+    folder_name = './model/ddqn_model_experiment_sanfrancisco_road2/'
+    reuse_folder = './model/short_paper_sanfrancisco_road2_standard/'
     
     print("Folder name: ", folder_name)
     
@@ -600,10 +600,22 @@ if __name__ == '__main__':
             print("Reward: ", reward)     
             
             if generated_uid:
-                uid_list[generated_uid] = dqn.buffer_memory.count
-                
+
+                count_ = dqn.memory_counter % HyperParameter['MEMORY_SIZE']
+
+                uid_list[generated_uid] = count_
+
             if (collision_info == 'pedestrian' or collision_info == 'npc_vehicle') and col_uid != generated_uid:
-                dqn.buffer_memory.reward[uid_list[col_uid]] = torch.as_tensor(reward)
+
+                # print("Action in memory: ", dqn.memory[uid_list[col_uid]][N_STATES])
+                # print("Reward in memory: ", dqn.memory[uid_list[col_uid]][N_STATES + 1])
+
+                dqn.memory[uid_list[col_uid]][N_STATES + 1] = reward
+
+                # print("New reward: ", reward)
+
+                # print("Reward at the moment: ", dqn.memory[uid_list[col_uid]][N_STATES + 1])
+
                 reward = reward * 2/3
             
             dis__ = 100
@@ -701,9 +713,9 @@ if __name__ == '__main__':
                             folder_name + 'target_net_' + str(
                                 i_episode + 1) + '_road' + road_num + '.pt')
                 
-                with open(folder_name + 'memory_buffer_' + str(
-                                i_episode + 1) + '_road' + road_num + '.pkl', "wb") as file:
-                    pickle.dump(dqn.buffer_memory, file)
+                # with open(folder_name + 'memory_buffer_' + str(
+                #                 i_episode + 1) + '_road' + road_num + '.pkl', "wb") as file:
+                #     pickle.dump(dqn.buffer_memory, file)
                     
                 with open(folder_name + 'rl_network_' + str(
                                 i_episode + 1) + '_road' + road_num + '.pkl', "wb") as file:

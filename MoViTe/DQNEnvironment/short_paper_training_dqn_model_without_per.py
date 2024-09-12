@@ -597,10 +597,22 @@ if __name__ == '__main__':
             print("Reward: ", reward)     
             
             if generated_uid:
-                uid_list[generated_uid] = dqn.buffer_memory.count
-                
+
+                count_ = dqn.memory_counter % HyperParameter['MEMORY_SIZE']
+
+                uid_list[generated_uid] = count_
+
             if (collision_info == 'pedestrian' or collision_info == 'npc_vehicle') and col_uid != generated_uid:
-                dqn.buffer_memory.reward[uid_list[col_uid]] = torch.as_tensor(reward)
+
+                # print("Action in memory: ", dqn.memory[uid_list[col_uid]][N_STATES])
+                # print("Reward in memory: ", dqn.memory[uid_list[col_uid]][N_STATES + 1])
+
+                dqn.memory[uid_list[col_uid]][N_STATES + 1] = reward
+
+                # print("New reward: ", reward)
+
+                # print("Reward at the moment: ", dqn.memory[uid_list[col_uid]][N_STATES + 1])
+
                 reward = reward * 2/3
             
             dis__ = 100
@@ -698,9 +710,9 @@ if __name__ == '__main__':
                             folder_name + 'target_net_' + str(
                                 i_episode + 1) + '_road' + road_num + '.pt')
                 
-                with open(folder_name + 'memory_buffer_' + str(
-                                i_episode + 1) + '_road' + road_num + '.pkl', "wb") as file:
-                    pickle.dump(dqn.buffer_memory, file)
+                # with open(folder_name + 'memory_buffer_' + str(
+                #                 i_episode + 1) + '_road' + road_num + '.pkl', "wb") as file:
+                #     pickle.dump(dqn.buffer_memory, file)
                     
                 with open(folder_name + 'rl_network_' + str(
                                 i_episode + 1) + '_road' + road_num + '.pkl', "wb") as file:
