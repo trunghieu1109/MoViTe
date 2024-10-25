@@ -10,6 +10,8 @@ import lgsvl
 import numpy as np
 from collision_utils_origin import pedestrian, npc_vehicle, calculate_measures
 from clustering import cluster
+from shapely.geometry.polygon import Polygon
+from shapely.geometry import Point
 import math
 import threading
 from lgsvl.agent import NpcVehicle
@@ -69,7 +71,12 @@ current_lane = {
         'a': 0,
         'b': 0,
         'c': 0
-    }
+    },
+    'left_boundary_type': 0,
+    'right_boundary_type': 0,
+    'left_lane_direction': 0,
+    'right_lane_direction': 0,
+    'id': "lane_54"
 }
 
 speed_list = []
@@ -82,10 +89,10 @@ prefix = '/deepqtest/lgsvl-api/'
 
 # setup connect to apollo
 
-APOLLO_HOST = '70.55.143.61'  # or 'localhost'
-PORT = 41211
-DREAMVIEW_PORT = 41081
-BRIDGE_PORT = 41048
+APOLLO_HOST = '141.195.16.189'  # or 'localhost'
+PORT = 42870
+DREAMVIEW_PORT = 42391
+BRIDGE_PORT = 42014
 
 msg_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 server_address = (APOLLO_HOST, PORT)
@@ -101,6 +108,28 @@ with open(lanes_map_file, "rb") as file:
     lanes_map = pickle.load(file)
 
 file.close()
+
+junctions_map_file = "./map/{}_junctions.pkl".format(map)
+junctions_map = None
+
+with open(junctions_map_file, "rb") as file2:
+    junctions_map = pickle.load(file2)
+
+file2.close()
+
+lanes_junctions_map_file = "./map/{}_lanes_junctions.pkl".format(map)
+lanes_junctions_map = None
+
+with open(lanes_junctions_map_file, "rb") as file3:
+    lanes_junctions_map = pickle.load(file3)
+
+file3.close()
+
+# print(lanes_map)
+
+print(lanes_map['lane_0'])
+print(junctions_map['J_7'])
+print(lanes_junctions_map['J_7'])
 
 # on collision callback function
 def on_collision(agent1, agent2, contact):
@@ -1460,16 +1489,84 @@ def check_modules_status():
 def cal_dis(x_a, y_a, z_a, x_b, y_b, z_b):
     return math.sqrt((x_a - x_b) ** 2 + (y_a - y_b) ** 2 + (z_a - z_b) ** 2)
 
+def is_in_junction(p_point):
+    
+    global junctions_map
+    
+    p_point = Point(p_point)
+    closet_dis = 999999
+    res_id = 0
+    
+    for id, lane_polygon in junctions_map.items():
+        if lane_polygon.contains(p_point):
+            return id, 2
+        
+        dis = lane_polygon.boundary.distance(p_point)
+        if dis < closet_dis:
+            closet_dis = dis
+            res_id = id
+
+    if closet_dis <= 20:
+        return res_id, 1
+    else:
+        return None, 0
+    
+def cal_angle_ox(vector_):
+    # print(vector_['x'], vector_['y'])
+    if vector_['x'] == 0:
+        if vector_['y'] > 0:
+            return math.pi
+        else:
+            return -math.pi
+    
+    angle = math.atan2(vector_['y'], vector_['x'])
+
+    # print(angle)
+    
+    return angle
+    
+def entry_detail(current_lane, target_lane, dis_vector):
+    up = current_lane['x'] * target_lane['x'] + current_lane['y'] * target_lane['y']
+    down = math.sqrt(current_lane['x'] ** 2 + current_lane['y'] ** 2) * math.sqrt(target_lane['x'] ** 2 + target_lane['y'] ** 2) + 0.001
+    
+    angle = math.acos(abs(up) / down)
+    # print(angle)
+    
+    if angle < math.pi / 12:
+        if up < 0:
+            return "vertical", "inverse"
+        else:
+            return "vertical", "forward"
+    else:
+        angle1 = cal_angle_ox(current_lane)
+        angle2 = cal_angle_ox(dis_vector)
+
+        # print(angle1, angle2)
+
+
+        if angle1 > 0:
+            if angle2 >= angle1 - math.pi and angle2 <= angle1:
+                return "horizontal", "right"
+            else:
+                return "horizontal", "left"
+        else:
+            if angle2 >= angle1 and angle2 <= angle1 + math.pi:
+                return "horizontal", "left"
+            else:
+                return "horizontal", "right"
+        
 
 @app.route('/LGSVL/Status/Environment/State', methods=['GET'])
 def get_environment_state():
 
     global current_lane
+    global time_offset
 
     agents = sim.get_agents()
 
     weather = sim.weather
     position = agents[0].state.position
+    velocity = agents[0].state.velocity
     rotation = agents[0].state.rotation
     signal = sim.get_controllable(position, "signal")
     speed = agents[0].state.speed
@@ -1500,6 +1597,7 @@ def get_environment_state():
     print("Get messages")
 
     # extract lane info 
+    # current_lane_id = ''
 
     for lane in control_info["lane_arr"]:
         id = control_info["lane_arr"][lane]
@@ -1530,6 +1628,38 @@ def get_environment_state():
                 current_lane['right_boundary']['a'] = right_a
                 current_lane['right_boundary']['b'] = right_b
                 current_lane['right_boundary']['c'] = right_c
+                
+                current_lane['left_boundary_type'] = lanes_map[id]['left_boundary_type']
+                current_lane['right_boundary_type'] = lanes_map[id]['right_boundary_type']
+                
+                if lanes_map[id]['left_lane_direction'] < 0:
+                    current_lane['left_lane_direction'] = 2
+                else:
+                    current_lane['left_lane_direction'] = lanes_map[id]['left_lane_direction']
+                    
+                if lanes_map[id]['right_lane_direction'] < 0:
+                    current_lane['right_lane_direction'] = 2
+                else:
+                    current_lane['right_lane_direction'] = lanes_map[id]['right_lane_direction']
+                
+                current_lane['vector'] = {
+                    'x': lanes_map[id]['central_curve'][1]['x'] - lanes_map[id]['central_curve'][0]['x'],
+                    'y': lanes_map[id]['central_curve'][1]['y'] - lanes_map[id]['central_curve'][0]['y']
+                }  
+                current_lane['id'] = id
+                
+    # print("Lane id: ", current_lane['id'])
+                
+    # print("Current lane: ", current_lane)
+                
+    lane_info = 0
+    
+    lane_info = lane_info + 100 * current_lane['left_boundary_type']
+    lane_info = lane_info + 10 * current_lane['right_boundary_type']
+    lane_info = lane_info + 3 * current_lane['left_lane_direction']          
+    lane_info = lane_info + current_lane['right_lane_direction'] 
+    
+    print("Lane info: ", lane_info)
 
     # transform ego's position to world coordinate position
     transform = lgsvl.Transform(
@@ -1539,6 +1669,78 @@ def get_environment_state():
     gps = sim.map_to_gps(transform)
     dest_x = gps.easting
     dest_y = gps.northing
+
+    # print("GPS: ", gps)
+
+    transform_next = lgsvl.Transform(
+        lgsvl.Vector(position.x + velocity.x, position.y + velocity.y,
+                     position.z + velocity.z), lgsvl.Vector(rotation.x, rotation.y, rotation.z)
+    )
+    gps_next = sim.map_to_gps(transform_next)
+    dest_x_next = gps_next.easting
+    dest_y_next = gps_next.northing
+
+    ego_direction = {
+        'x': dest_x_next - dest_x,
+        'y': dest_y_next - dest_y
+    }
+
+    junction_id, junction_position = is_in_junction([dest_x, dest_y])
+    
+    print("Junction id: ", junction_id, "Position: ", junction_position) 
+    
+    has_vertical_entry_inverse = False
+    has_vertical_entry_forward = False
+    has_horizontal_entry_left = False
+    has_horizontal_entry_right = False
+    
+    if not junction_id is None:
+        for lane_id in lanes_junctions_map[junction_id]:
+            lane_vector = {
+                'x': lanes_map[lane_id]['central_curve'][1]['x'] - lanes_map[lane_id]['central_curve'][0]['x'],
+                'y': lanes_map[lane_id]['central_curve'][1]['y'] - lanes_map[lane_id]['central_curve'][0]['y']
+            } 
+
+            dis_vector = {
+                'x': lanes_map[lane_id]['central_curve'][0]['x'] - dest_x,
+                'y': lanes_map[lane_id]['central_curve'][0]['y'] - dest_y
+            }    
+            
+            shape, direct = entry_detail(ego_direction, lane_vector, dis_vector)
+
+            # print("Lane id: ", lane_id, shape , direct)
+            
+            if direct == 'left':
+                has_horizontal_entry_left = True
+            elif direct == 'right':
+                has_horizontal_entry_right = True
+            elif direct == 'inverse':
+                has_vertical_entry_inverse = True
+            else:
+                has_vertical_entry_forward = True
+                
+    # print(has_horizontal_entry_left)
+    # print(has_horizontal_entry_right)
+    # print(has_vertical_entry_forward)
+    # print(has_vertical_entry_inverse)
+                
+    junction_info = 0
+    
+    junction_info = junction_position * 100
+    
+    if has_horizontal_entry_left:
+        junction_info += 1
+        
+    if has_horizontal_entry_right:
+        junction_info += 2
+    
+    if has_vertical_entry_forward:
+        junction_info += 4
+        
+    if has_vertical_entry_inverse:
+        junction_info += 8
+        
+    print("Junction info: ", junction_info)
 
     # orient = gps.orientation
     
@@ -1582,7 +1784,7 @@ def get_environment_state():
 
     state_dict = {'x': position.x, 'y': position.y, 'z': position.z,
                   'rx': rotation.x, 'ry': rotation.y, 'rz': rotation.z,
-                  'weather': weather_state, 'timeofday': sim.time_of_day, 
+                  'weather': weather_state, 'timeofday': (sim.time_of_day - time_offset + 24) % 24, 
                   'signal': interpreter_signal(signal.current_state),
                   'speed': speed, 'local_diff': local_diff, 'local_angle': local_angle,
                   'dis_diff': per_info["dis_diff"], 'theta_diff': per_info["theta_diff"],
@@ -1591,6 +1793,7 @@ def get_environment_state():
                   'steering_rate': control_info['steering_rate'], 'steering_target': control_info['steering_target'], 
                   'acceleration': control_info['acceleration'], "num_obs": num_obs, 
                   "min_obs_dist": min_obs_dist, "speed_min_obs_dist": speed_min_obs_dist,
+                  'lane_info': lane_info, 'junction_info': junction_info
                   }
 
     return json.dumps(state_dict)
