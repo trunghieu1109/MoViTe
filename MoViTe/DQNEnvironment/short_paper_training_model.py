@@ -15,79 +15,90 @@ from memory.buffer import ReplayBuffer, PrioritizedReplayBuffer
 
 from utils import *
 
-ETTC_threshold = 7 # (s)
-DTO_threshold = 10 # (m)
-JERK_threshold = 5 # (m/s^2)
+NUMBER_WEATHER_TIME = 13
+NUMBER_NPC_VEHICLE = 30
+NUMBER_PEDESTRIAN = 2
+
+USE_WEATHER_TIME = False
+USE_NPC_VEHICLE = True
+USE_PEDESTRIAN = True
 
 current_eps = ''
 reuse_mem_eps = ''
 start_eps = '0'
-end_eps = '200'
+end_eps = '300'
 
-road_num = '1'  # the Road Number
+road_num = '3'  # the Road Number
 second = '6'  # the experiment second
-scene = 'bd77ac3b-fbc3-41c3-a806-25915c777022'
+scene = '12da60a7-2fc9-474d-a62a-5cc08cb97fe8'
 requests.post(f"http://localhost:8933/LGSVL/LoadScene?scene={scene}&road_num=" + road_num)
 file_name = str(int(time.time()))
 
 goal = [
-    312.5, 
-    36.7, 
-    312.3
+    -208.2, 
+    10.2, 
+    -181.6
 ]
 
 def get_environment_state():
+    print(20*'-', "Get environment states", 20*'-')
     
     r = requests.get("http://localhost:8933/LGSVL/Status/Environment/State")
     a = r.json()
-    state = np.zeros(24)
-    state[0] = a['x']
-    state[1] = a['y']
-    state[2] = a['z']
-    state[3] = a['weather']
-    state[4] = a['timeofday']
-    state[5] = a['signal']
-    state[6] = a['rx']
-    state[7] = a['ry']
-    state[8] = a['rz']
-    state[9] = a['speed']
+    state = np.zeros(23)
+    state[0] = a['lane_info']
+    state[1] = a['junction_info']   # check if exist left / right lane or ego is on a junction
+    state[2] = a['weather']
+    state[3] = a['timeofday']
+    state[4] = a['signal']
+    state[5] = a['rx']
+    state[6] = a['ry']
+    state[7] = a['rz']
+    state[8] = a['speed']
     
     # add advanced external states 
-    state[10] = a['num_obs']
-    state[11] = a['min_obs_dist']
-    state[12] = a['speed_min_obs_dist']
+    state[9] = a['num_obs']
+    state[10] = a['min_obs_dist']
+    state[11] = a['speed_min_obs_dist']
     
     # add localization option
     
-    state[13] = a['local_diff']
-    state[14] = a['local_angle']
+    state[12] = a['local_diff']
+    state[13] = a['local_angle']
     
     # add perception option
-    state[15] = a['dis_diff']
-    state[16] = a['theta_diff']
-    state[17] = a['vel_diff']
-    state[18] = a['size_diff']
+    state[14] = a['dis_diff']
+    state[15] = a['theta_diff']
+    state[16] = a['vel_diff']
+    state[17] = a['size_diff']
     
     # add control option
-    state[19] = a['throttle']
-    state[20] = a['brake']
-    state[21] = a['steering_rate']
-    state[22] = a['steering_target']
-    state[23] = a['acceleration']
+    state[18] = a['throttle']
+    state[19] = a['brake']
+    state[20] = a['steering_rate']
+    state[21] = a['steering_target']
+    state[22] = a['acceleration']
 
-    return state
+
+    pos = np.zeros(3)
+    pos[0] = a['x']
+    pos[1] = a['y']
+    pos[2] = a['z']
+
+    return state, pos
 
 action_space = get_action_space()['command']
 scenario_space = get_action_space()['scenario_description']
 N_ACTIONS = action_space['num']
-N_STATES = get_environment_state().shape[0]
+states, _ = get_environment_state()
+N_STATES = states.shape[0]
 ENV_A_SHAPE = 0
 
 print("Number of action: ", N_ACTIONS)
 print("Number of state: ", N_STATES)
 
-HyperParameter = dict(BATCH_SIZE=64, GAMMA=0.9, EPS_START=1, EPS_END=0.1, EPS_DECAY=10000, TARGET_UPDATE=100,
-                      lr=1e-2, INITIAL_MEMORY=3500, MEMORY_SIZE=3500, SCHEDULER_UPDATE=100, WEIGHT_DECAY=1e-5,
+HyperParameter = dict(BATCH_SIZE=64, GAMMA=0.9, EPS_START=1, EPS_END=0.1, EPS_DECAY=8500, TARGET_UPDATE=100,
+                      lr=1e-3 * 3, INITIAL_MEMORY=3000, MEMORY_SIZE=3000, WEIGHT_DECAY=1e-5,
                       LEARNING_RATE_DECAY=0.8)
 
 print("MEMORY SIZE: ", HyperParameter["MEMORY_SIZE"])
@@ -97,16 +108,14 @@ print("EPS DECAY: ", HyperParameter["EPS_DECAY"])
 class Net(nn.Module):
     def __init__(self, ):
         super(Net, self).__init__()
-        self.fc1 = nn.Linear(N_STATES, 512)
-        self.fc1.weight.data.normal_(0, 0.1)  # initialization
-        self.bn1 = nn.BatchNorm1d(512, track_running_stats = True)
-        self.fc2 = nn.Linear(512, 512)
-        self.fc2.weight.data.normal_(0, 0.1)  # initialization
-        self.bn2 = nn.BatchNorm1d(512, track_running_stats = True)
+        self.fc1 = nn.Linear(N_STATES, 1024)
+        self.fc1.weight.data.normal_(0, 0.01)  # initialization
+        self.fc2 = nn.Linear(1024, 512)
+        self.fc2.weight.data.normal_(0, 0.01)  # initialization
         self.out = nn.Linear(512, N_ACTIONS)
-        self.out.weight.data.normal_(0, 0.1)  # initialization
+        self.out.weight.data.normal_(0, 0.01)  # initialization
 
-    def forward(self, x, is_training=True):
+    def forward(self, x):
         x = self.fc1(x)
         x = F.relu(x)
         x = self.fc2(x)
@@ -118,8 +127,7 @@ class DQN(object):
     def __init__(self):
         self.eval_net, self.target_net = Net(), Net()
         # learning rate decay
-        self.optimizer = torch.optim.Adam(self.eval_net.parameters(), lr=HyperParameter['lr'], weight_decay=HyperParameter['WEIGHT_DECAY'])
-        self.scheduler = torch.optim.lr_scheduler.LambdaLR(self.optimizer, lr_lambda=self.lr_lambda_)
+        self.optimizer = torch.optim.Adam(self.eval_net.parameters(), lr=HyperParameter['lr'])
         
         self.steps_done = 0
         self.memory_counter = 0
@@ -127,19 +135,20 @@ class DQN(object):
         self.buffer_memory = PrioritizedReplayBuffer(N_STATES, N_ACTIONS, HyperParameter["MEMORY_SIZE"], 0.01, 0.7, 0.4)
         self.previous_weather_and_time = None
         
-        self.num_of_npc_action = 32
-        self.num_of_action = 45
+        self.num_of_npc_action = USE_NPC_VEHICLE * NUMBER_NPC_VEHICLE + USE_PEDESTRIAN * NUMBER_PEDESTRIAN
+        self.num_of_action = self.num_of_npc_action + USE_WEATHER_TIME * NUMBER_WEATHER_TIME
         self.action_chosen_prob = [1 / self.num_of_action] * self.num_of_action
         self.npc_action_chosen_prob = [1 / self.num_of_npc_action] * self.num_of_npc_action
-
-    def lr_lambda_(self, epoch):
-        return HyperParameter['LEARNING_RATE_DECAY'] ** epoch
+        
+        print("INIT DDQN")
+        print("Number of npc action: ", self.num_of_npc_action)
+        print("Number of action: ", self.num_of_action)
 
     def update_action_prob(self, action):
         
-        prob = self.action_chosen_prob[action]
+        print(20*'-', "Update action probability", 20*'-')
         
-        # print("Probability: ", prob)
+        prob = self.action_chosen_prob[action]
         
         reduced_amount = prob * 0.05
         
@@ -150,9 +159,10 @@ class DQN(object):
                 self.action_chosen_prob[i] += reduced_amount / (self.num_of_action - 1)    
                 
     def update_npc_action_prob(self, action):
-        prob = self.npc_action_chosen_prob[action]
         
-        # print("Probability: ", prob)
+        print(20*'-', "Update driving action probability", 20*'-')
+        
+        prob = self.npc_action_chosen_prob[action]
         
         reduced_amount = prob * 0.05
         
@@ -163,8 +173,11 @@ class DQN(object):
                 self.npc_action_chosen_prob[i] += reduced_amount / (self.num_of_npc_action - 1)    
 
     def choose_action(self, x, current_step, prev_step):
-        # print("Current Step: ", current_step)
+        
+        print(20*'-', "Choose new action", 20*'-')
+        
         x = torch.unsqueeze(torch.FloatTensor(x), 0)
+        
         eps_threshold = HyperParameter['EPS_END'] + (
                 HyperParameter['EPS_START'] - HyperParameter['EPS_END']) * math.exp(
             -1. * self.steps_done / HyperParameter['EPS_DECAY'])
@@ -190,15 +203,12 @@ class DQN(object):
         if isGreedy:  # greedy
             choose = "by model"
             print("Choose by model")
-            # print("Let choose action by model")
-            actions_value = self.eval_net.forward(x, False)
-
-            # print('action value: ', actions_value, actions_value.shape)
+            
+            actions_value = self.eval_net.forward(x)
             action = torch.max(actions_value, 1)[1].data.numpy()
-            # print(actions_value.data)
             action = action[0] if ENV_A_SHAPE == 0 else action.reshape(ENV_A_SHAPE)  # return the argmax index
             
-            is_weather_time_action = (0 <= action and action <= 12)
+            is_weather_time_action = (0 <= action and action <= 12 and USE_WEATHER_TIME)
             
             if is_weather_time_action:
                 if current_step - prev_step >= 5:
@@ -216,27 +226,14 @@ class DQN(object):
                         
                         cnt += 1
             
-            # print(action)
         else:  # random
             choose = "randomly"
             print("Choose randomly")
-            # action = np.random.randint(0, N_ACTIONS)
-            
-            # is_weather_time_action = (0 <= action and action <= 12)
-            
-            # if is_weather_time_action:
-            #     if current_step - prev_step >= 5:
-            #         if action == self.previous_weather_and_time:
-            #             action = np.random.randint(0, N_ACTIONS)
-            #     else:
-            #         action = np.random.randint(13, N_ACTIONS)
-            
-            # action = action if ENV_A_SHAPE == 0 else action.reshape(ENV_A_SHAPE)
-            
+           
             action = np.random.choice(self.num_of_action, size=1, replace = False, p=self.action_chosen_prob)
             action = action[0]
             
-            is_weather_time_action = (0 <= action and action <= 12)
+            is_weather_time_action = (0 <= action and action <= 12 and USE_WEATHER_TIME)
             
             if is_weather_time_action:
                 if current_step - prev_step >= 5:
@@ -249,17 +246,19 @@ class DQN(object):
 
             self.update_action_prob(action)
             
-            if 12 < action:
+            if 12 < action and USE_WEATHER_TIME:
                 self.update_npc_action_prob(action - (self.num_of_action - self.num_of_npc_action))
             
             action = action if ENV_A_SHAPE == 0 else action.reshape(ENV_A_SHAPE)
         
-        if 0 <= action and action <= 12:
+        if 0 <= action and action <= 12 and USE_WEATHER_TIME:
             self.previous_weather_and_time = action   
 
         return action, choose
 
     def store_transition(self, s, a, r, s_, done):
+        print(20*'-', "Store transition to replay buffer", 20*'-')
+        
         self.memory_counter += 1
         self.buffer_memory.add((s, a, r, s_, int(done)))
 
@@ -294,18 +293,13 @@ class DQN(object):
         
         td_error = torch.abs(q_eval - q_target).detach()
         loss = torch.mean(torch.abs(q_eval - q_target) ** 2 * weights)
-        
+
         pd.DataFrame([[self.learn_step_counter, self.optimizer.param_groups[0]['lr'], loss.item()]]).to_csv('./loss_log/loss_log_' + file_name + '.csv', 
                                                          mode='a', header=False, index=None)
 
         self.optimizer.zero_grad()
         loss.backward()
         self.optimizer.step()
-        
-        # update learning rate
-        if self.learn_step_counter % HyperParameter['SCHEDULER_UPDATE'] == 0:
-            print("Updating learning rate")
-            self.scheduler.step()
         
         self.buffer_memory.update_priorities(tree_idxs, td_error.numpy())
     
@@ -358,20 +352,9 @@ def judge_done():
     return judge
 
 def calculate_reward(action_id):
-    """
-    Function for reward calculating.
-    First, interpret action id to real RESTful API and call function -execute_action- to execute current RESTful API;
-    then after the execution of RESTful API, the collision information are collected and based on it, we can calculate the reward.
-    :param action_id:
-    :return:
-    """
-    
-    global DTO_threshold
-    global ETTC_threshold
-    global JERK_threshold
-    
+
     proC_list, obstacle_uid, generated_uid = execute_action(action_id)
-    observation = get_environment_state()
+    observation, pos = get_environment_state()
     action_reward = 0
     
     # Collision Probability Reward
@@ -410,7 +393,7 @@ def calculate_reward(action_id):
       
     action_reward = collision_reward
             
-    return observation, action_reward, collision_probability, episode_done, proC_list, obstacle_uid, collision_info, col_uid, generated_uid
+    return observation, pos, action_reward, collision_probability, episode_done, proC_list, obstacle_uid, collision_info, col_uid, generated_uid
 
 title = ["Episode", "Step", "State", "Action", "Reward", "Collision Probability", "Collision Probability List", "Action_Description", "Done"]
 df_title = pd.DataFrame([title])
@@ -422,23 +405,29 @@ if __name__ == '__main__':
 
     dqn = DQN()
         
-    folder_name = './model/short_paper_tartu_road1_standard/'
+    in_folder_name = './model/crisis_standard_sanfrancisco_road3_ablation_weather_time/'
+    out_folder_name = './model/crisis_standard_sanfrancisco_road3_ablation_weather_time/'
     reuse_folder = './model/short_paper_/'
     
-    print("Folder name: ", folder_name)
+    print("In Folder name: ", in_folder_name)
+    print("Out Folder name: ", out_folder_name)
     
-    if not os.path.isdir(folder_name):
-        print("Create dir", folder_name)
-        os.makedirs(folder_name)
-        
+    if not os.path.isdir(in_folder_name):
+        print("Create in dir", in_folder_name)
+        os.makedirs(in_folder_name)
+    
+    if not os.path.isdir(out_folder_name):
+        print("Create out dir", out_folder_name)
+        os.makedirs(out_folder_name)
+
     if current_eps != '':
         print("Continue at episode: " + current_eps)
         
-        with open(folder_name + 'rl_network_' + current_eps + '_road' + road_num + '.pkl', "rb") as file:
+        with open(in_folder_name + 'rl_network_' + current_eps + '_road' + road_num + '.pkl', "rb") as file:
             dqn = pickle.load(file)
-        dqn.eval_net.load_state_dict(torch.load(folder_name + 'eval_net_' + current_eps + '_road' + road_num + '.pt'))
-        dqn.target_net.load_state_dict(torch.load(folder_name + 'target_net_' + current_eps + '_road' + road_num + '.pt'))
-        with open(folder_name + 'memory_buffer_' + current_eps + '_road' + road_num + '.pkl', "rb") as file:
+        dqn.eval_net.load_state_dict(torch.load(in_folder_name + 'eval_net_' + current_eps + '_road' + road_num + '.pt'))
+        dqn.target_net.load_state_dict(torch.load(in_folder_name + 'target_net_' + current_eps + '_road' + road_num + '.pt'))
+        with open(in_folder_name + 'memory_buffer_' + current_eps + '_road' + road_num + '.pkl', "rb") as file:
             dqn.buffer_memory = pickle.load(file)       
             
         print(dqn.buffer_memory.real_size, dqn.learn_step_counter, dqn.steps_done)
@@ -463,7 +452,7 @@ if __name__ == '__main__':
 
     df_title = pd.DataFrame([title])
     file_name = str(int(time.time()))
-    log_name = '../ExperimentData/short_paper_sanfrancisco_internal_feature_road' + road_num + '_' + file_name + '.csv'
+    log_name = '../ExperimentData/crisis_standard_road' + road_num + '_' + file_name + '.csv'
     
     df_title.to_csv(log_name, mode='w', header=False, index=None)
 
@@ -481,8 +470,7 @@ if __name__ == '__main__':
         'y': 0, 
         'z': 0
     }
-    
-    collision_per_eps = 0
+
     step_after_collision = -1
     
     uid_list = {}
@@ -493,45 +481,38 @@ if __name__ == '__main__':
         print('------------------------------------------------------')
         requests.post(f"http://localhost:8933/LGSVL/LoadScene?scene={scene}&road_num=" + road_num)
 
-        s = get_environment_state()
-        # print("Environment state: ", s)
+        s, pos_ = get_environment_state()
         ep_r = 0
         step = 0
         while True:
             current_step = step
             action, _ = dqn.choose_action(s, current_step, previous_weather_and_time_step)
             
-            if 0 <= action and action <= 12:
+            if 0 <= action and action <= 12 and USE_WEATHER_TIME:
                 previous_weather_and_time_step = step
                 
             action_description = scenario_space[str(action)]
             
-            # print("Action chosen: ", action, action_description)
-            # take action
-            s_, reward, proC, done, proC_list, obstacle_uid, collision_info, col_uid, generated_uid = calculate_reward(action)            
+            s_, curr_pos, reward, proC, done, proC_list, obstacle_uid, collision_info, col_uid, generated_uid = calculate_reward(action)            
                 
-            dis_to_prev_col = math.sqrt((s_[0] - collision_position['x']) ** 2 + (s_[1] - collision_position['y']) ** 2 + (s_[2] - collision_position['z']) ** 2)
+            dis_to_prev_col = math.sqrt((curr_pos[0] - collision_position['x']) ** 2 + (curr_pos[1] - collision_position['y']) ** 2 + (curr_pos[2] - collision_position['z']) ** 2)
             
             if collision_info != 'None':
-                collision_per_eps += 1
                 isCollision_ = False
             
                 if prev_collision_uid != col_uid:
-                    reward *= collision_per_eps
                     isCollision_ = True
                 else:
                     if dis_to_prev_col >= 3:
-                        reward *= collision_per_eps
                         isCollision_ = True
                     else:
-                        collision_per_eps -= 1
                         reward = 0
                         
                 if isCollision_:
                     collision_position = {
-                        'x': s_[0],
-                        'y': s_[1],
-                        'z': s_[2]
+                        'x': curr_pos[0],
+                        'y': curr_pos[1],
+                        'z': curr_pos[2]
                     }
                     prev_collision_info = collision_info
                     prev_collision_uid = col_uid
@@ -561,46 +542,41 @@ if __name__ == '__main__':
                 
             if (collision_info == 'pedestrian' or collision_info == 'npc_vehicle') and col_uid != generated_uid:
                 dqn.buffer_memory.reward[uid_list[col_uid]] = torch.as_tensor(reward)
-                reward = reward * 2/3
+                reward = reward * 1/3
             
             dis__ = 100
             
             if prev_position:
-                dis__x = prev_position['x'] - s_[0]
-                dis__y = prev_position['y'] - s_[1]
-                dis__z = prev_position['z'] - s_[2]
+                dis__x = prev_position['x'] - curr_pos[0]
+                dis__y = prev_position['y'] - curr_pos[1]
+                dis__z = prev_position['z'] - curr_pos[2]
                 dis__ = math.sqrt(dis__x ** 2 + dis__y ** 2 + dis__z ** 2) 
                 
             finished = False
             dis_to_goal = 100
-            dis_to_goal_x = s_[0] - goal[0]
-            dis_to_goal_y = s_[1] - goal[1]
-            dis_to_goal_z = s_[2] - goal[2]
+            dis_to_goal_x = curr_pos[0] - goal[0]
+            dis_to_goal_y = curr_pos[1] - goal[1]
+            dis_to_goal_z = curr_pos[2] - goal[2]
             dis_to_goal = math.sqrt(dis_to_goal_x ** 2 + dis_to_goal_y ** 2 + dis_to_goal_z ** 2) 
             
+            print("Dis ", dis__, "dis to goal " , dis_to_goal)
+
             if dis__ <= 2 and dis_to_goal <= 5:
-                if not is_stopped:
-                    dqn.store_transition(s, action, reward, s_, done)
-                else:
-                    print("Don't save this transition into replay buffer")
-                    dqn.steps_done -= 1
-                is_stopped = True
                 done = True
-            else:
-                is_stopped = False
-                dqn.store_transition(s, action, reward, s_, done)
+            
+            dqn.store_transition(s, action, reward, s_, done)
             
             prev_position = {
-                'x': s_[0],
-                'y': s_[1],
-                'z': s_[2]
+                'x': curr_pos[0],
+                'y': curr_pos[1],
+                'z': curr_pos[2]
             }
             
             # Consider whether colliding to obstacle (signal, static obstacle, v.v) or not
             if collide_with_obstacle == True:
-                dis_x = pre_pos_obstacle_collision['x'] - s_[0]
-                dis_y = pre_pos_obstacle_collision['y'] - s_[1]
-                dis_z = pre_pos_obstacle_collision['z'] - s_[2]
+                dis_x = pre_pos_obstacle_collision['x'] - curr_pos[0]
+                dis_y = pre_pos_obstacle_collision['y'] - curr_pos[1]
+                dis_z = pre_pos_obstacle_collision['z'] - curr_pos[2]
                 dis_ = math.sqrt(dis_x ** 2 + dis_y ** 2 + dis_z ** 2)
                 
                 if dis_ <= 2:
@@ -618,24 +594,13 @@ if __name__ == '__main__':
                 collide_with_obstacle = False
             
             pre_pos_obstacle_collision = {
-                'x': s_[0],
-                'y': s_[1],
-                'z': s_[2],
+                'x': curr_pos[0],
+                'y': curr_pos[1],
+                'z': curr_pos[2],
             }
-
-            # print('>>>>>step, action, reward, collision_probability, DTO, ETTC, JERK, action_description, done: ', step, action,
-            #         reward, round(proC, 6), round(DTO, 6), round(ETTC, 6), round(JERK, 6),
-            #         "<" + action_description + ">",
-            #         done)
             
             print('>>>>>step, action, reward, collision_probability, action_description, done: ', step, action,
                     reward, round(proC, 6), "<" + action_description + ">", done)
-            
-            # pd.DataFrame(
-            #     [[i_episode, step, s, action, reward, proC, proC_list, DTO, ETTC, JERK, DTO_list, ETTC_list, JERK_list, action_description, done]]).to_csv(
-            #     log_name,
-            #     mode='a',
-            #     header=False, index=None)
             
             pd.DataFrame(
                 [[i_episode, step, s, action, reward, proC, proC_list, action_description, done]]).to_csv(
@@ -652,17 +617,17 @@ if __name__ == '__main__':
 
             if (i_episode + 1) % 5 == 0:
                 torch.save(dqn.eval_net.state_dict(),
-                            folder_name + 'eval_net_' + str(
+                            out_folder_name + 'eval_net_' + str(
                                 i_episode + 1) + '_road' + road_num + '.pt')
                 torch.save(dqn.target_net.state_dict(),
-                            folder_name + 'target_net_' + str(
+                            out_folder_name + 'target_net_' + str(
                                 i_episode + 1) + '_road' + road_num + '.pt')
                 
-                with open(folder_name + 'memory_buffer_' + str(
+                with open(out_folder_name + 'memory_buffer_' + str(
                                 i_episode + 1) + '_road' + road_num + '.pkl', "wb") as file:
                     pickle.dump(dqn.buffer_memory, file)
                     
-                with open(folder_name + 'rl_network_' + str(
+                with open(out_folder_name + 'rl_network_' + str(
                                 i_episode + 1) + '_road' + road_num + '.pkl', "wb") as file:
                     pickle.dump(dqn, file)
 
@@ -684,7 +649,6 @@ if __name__ == '__main__':
                     'z': 0
                 }
                 
-                collision_per_eps = 0
                 step_after_collision = -1
                 break
             step += 1
