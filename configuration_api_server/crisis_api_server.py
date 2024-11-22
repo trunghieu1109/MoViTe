@@ -1665,4 +1665,4 @@ def get_jerk():
 if __name__ == '__main__':
     connect_to_apollo_listener()
     load_map_traffic_condition()
-    app.run(host='0.0.0.0', port=8933, debug=False)
+    app.run(host=API_SERVER_HOST, port=API_SERVER_PORT, debug=False)
