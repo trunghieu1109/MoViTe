@@ -99,6 +99,10 @@ Finally, run the following command to user the model and generate testing scenar
 python3 ./crisis_model_pipeline/crisis_experiment.py
 ```
 
+# Website
+
+To get more information (results, examples, v.v) about this research, you can refer to our website.
+
 # Contact us
 If you have any questions, comments or suggestions, please do not hesitate to contact us.
 - Email: 21020017@vnu.edu.vn
