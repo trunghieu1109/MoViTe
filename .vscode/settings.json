@@ -1,0 +1,6 @@
+{
+    "python.analysis.extraPaths": [
+        "./PythonAPI",
+        "./MoViTe/configuration_api_server"
+    ]
+}
