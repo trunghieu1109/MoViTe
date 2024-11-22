@@ -36,12 +36,22 @@ class LLMAPI(object):
         return output, create_time, output_time, total_time
 
 
-    def evaluate_R_MR_extra_4full_experiments(self, model, repeat_time):
-        
-        path_prefix = "./"
+    def weather_condition(value):
+        if value == 0:
+            return "No"
+        elif value == 0.2:
+            return "Light"
+        elif value == 0.5:
+            return "Moderate"
+        elif value == 1:
+            return "Heavy"
+        else:
+            return "Unknown"
 
+    def evaluate_R_MR_extra_4full_experiments(self, model, repeat_time, attempt):
+        MAX_CHUNK_SIZE = 110000
         road_list = ["road1", "road2", "road3", "road4", "road33"]
-        road_list = ["road33"]
+        # road_list = ["road33"]
 
         scenarios_description = "In our experiment, a scenario is created by incrementally introducing dynamic obstacles, such as vehicles and pedestrians, throughout the driving duration."
 
@@ -50,42 +60,42 @@ class LLMAPI(object):
             "road2": scenarios_description + "In the following scenario, Ego's driving intention is to first travel on a four-lane, two-way road, then turn right at a T-intersection. After a short distance, Ego will turn left onto a one-way road.\n",
             "road3": scenarios_description + "In the following scenario, Ego's driving intention is to first travel on a six-lane, two-way road, pass one intersection, and then turn left at the second intersection.\n",
             "road4": scenarios_description + "In the following scenario, Ego's driving intention is to first drive on a straight, two-lane road, pass one intersection, turn left, and then make another left at the end of the road, where it connects to a curved boulevard.\n",
-            "road33": scenarios_description + "In the following scenario, Ego's driving intention is to first travel on a six-lane, two-way road, pass one intersection, and then turn left at the second intersection.\n",}
-        realistic_counts = {road: 0 for road in road_list}
-        realism_scores = {road: [] for road in road_list}
-
+            "road33": scenarios_description + "In the following scenario, Ego's driving intention is to first travel on a four-lane, two-way road, then turn right at a T-intersection. After a short distance, Ego will turn left onto a one-way road.\n",}
+   
         for road in road_list:
             # Specify the path to the scenario JSON file
-            randomly_select_scenarios_path = path_prefix + road + "-scenarios/"
+            randomly_select_scenarios_path = "" + road + "-scenarios/"
             scenarios_names_list = [f for f in os.listdir(randomly_select_scenarios_path) if
                                                     os.path.isfile(os.path.join(randomly_select_scenarios_path, f))]
 
-            for scenario_name in scenarios_names_list:
+
+            for j in range(11,12):
+                i = 16 * (attempt-1) + j
+                scenario_name = f"scenario{i}.json"
                 collided = False
                 randomly_select_scenario_path = randomly_select_scenarios_path + scenario_name
                 print(randomly_select_scenario_path)
                 with open(randomly_select_scenario_path, 'r') as json_file:
                     randomly_select_scenario = json.load(json_file)
                 self.total_time_step = len(randomly_select_scenario.keys())-1
+                print(self.total_time_step)
                 object_refs = set()
                 for timestep in randomly_select_scenario.keys():
                     object_refs.update(randomly_select_scenario[timestep].keys())
                 object_refs = sorted(object_refs)
                 params_all = ""
+                current_chunk = ""
+                chunks = []
+                tc = TokenCount(model_name="gpt-3.5-turbo")
                 for time_step in range(self.total_time_step + 1):
-                    if collided:
-                        break
-
                     junction_info = None
                     lane_info = None
-                    weather_info = None
-                    time_info = None
 
                     params = ""
                     for object_ref in object_refs:
                         if f'timestep_{time_step}' in randomly_select_scenario and object_ref in randomly_select_scenario[f'timestep_{time_step}']:
                             configuration = randomly_select_scenario[f'timestep_{time_step}'][object_ref]
-                            if configuration is not None: 
+                            if isinstance(configuration, dict) and configuration is not None:
                                 if 'position' in configuration:
                                     for parameter_object in ["position", "rotation", "velocity", "angular_velocity"]:
                                         params += f"The '{parameter_object}' of {object_ref} is ({configuration[parameter_object]['x']}, {configuration[parameter_object]['y']}, {configuration[parameter_object]['z']}).\n"
@@ -101,23 +111,14 @@ class LLMAPI(object):
                                             params += ".\n"
                                 elif "Left_Boundary" in configuration:
                                     lane_info = configuration
-                                elif "rain_level" in configuration:
-                                    weather_info = configuration
-                                elif "time" in configuration:
-                                    time_info = configuration
-                                else:
-                                    if object_ref == "Ahead_Traffic_Signal":
-                                        continue
-                                    
+                                elif "Junction_Position" in configuration:
                                     junction_info = configuration
+                                elif "rain" in configuration:
+                                    weather_info = configuration
+                            elif object_ref == "time":
+                                time_info = configuration      
                             else:
                                 params += f"The '{object_ref}' is not present at {round(time_step * 0.5, 1)} seconds.\n"
-                                
-                    params += f"Rain level is {weather_info['rain_level']}"
-                    params += f"Fog level is {weather_info['fog_level']}"
-                    params += f"Wetness level is {weather_info['wetness_level']}"
-                    
-                    params += f"Time of day is {time_info['time']}"
 
                     params += f"Left Boundary is {lane_info['Left_Boundary']}.\n"
                     params += f"Right Boundary is {lane_info['Right_Boundary']}.\n"
@@ -137,8 +138,56 @@ class LLMAPI(object):
                                     
                         else:
                             params += "Ego is not in the junction.\n"
+                    if time_info == 10:
+                        params += "The current time is morning.\n"
+                    elif time_info == 14:
+                        params += "The current time is afternoon.\n"
+                    else:
+                        params += "The current time is evening.\n"
+                    params += "The weather conditions are as follows:\n"
+
+                    if weather_info["rain"] == 0:
+                        params += "Rain: None (clear weather)\n"
+                    elif weather_info["rain"] == 0.2:
+                        params += "Rain: Light rain\n"
+                    elif weather_info["rain"] == 0.5:
+                        params += "Rain: Moderate rain\n"
+                    elif weather_info["rain"] == 1:
+                        params += "Rain: Heavy rain\n"
+                    if weather_info["fog"] == 0:
+
+                        params += "Fog: No fog\n"
+                    elif weather_info["fog"] == 0.2:
+                        params += "Fog: Light fog\n"
+                    elif weather_info["fog"] == 0.5:
+                        params += "Fog: Moderate fog\n"
+                    elif weather_info["fog"] == 1:
+                        params += "Fog: Dense fog\n"
+
+                    if weather_info["wetness"] == 0:
+                        params += "Wetness: Dry\n"
+                    elif weather_info["wetness"] == 0.2:
+                        params += "Wetness: Slightly wet\n"
+                    elif weather_info["wetness"] == 0.5:
+                        params += "Wetness: Moderately wet\n"
+                    elif weather_info["wetness"] == 1:
+                        params += "Wetness: Fully wet\n"
+                  
+                    current_chunk += f"At {round(time_step * 0.5, 1)} seconds:\n{params}\n"
+                    tokens = tc.num_tokens_from_string(current_chunk)
+          
+                    if tokens >= MAX_CHUNK_SIZE:
+                        print(f"--------------Tokens in the string: {tokens}------------")
+                        chunks.append(current_chunk)
+                        current_chunk = ""
+     
                     params_all += f"At {round(time_step * 0.5, 1)} seconds:\n{params}\n"
 
+                if current_chunk:
+                    chunks.append(current_chunk)
+                chunk_len =(len(chunks))
+                print(f"-----Chunks size: {chunk_len}-------")
+                # sys.exit()
                 messages = []
                 sys_message = {}
                 sys_message["role"] = "system"
@@ -146,14 +195,21 @@ class LLMAPI(object):
 You are a helpful crash scenario realism evaluation assistant.
 You will evaluate the following autonomous driving crash scenario, and check whether the scenario is realistic and natural. A collision is normal and you will evaluate realism of this case.
 You will provide the corresponding realism score. The scale is 1.0-10.0, where 1.0 is unrealistic and 10.0 is realistic.
-You will also provide the Probability and Confidence of the outputs as a percentage. Probability refers to the likelihood of your output, while Confidence indicates the certainty in the prediction for your output.
-You know the scenario is from the LGSVL simulator."""
+You know the scenario is from the LGSVL simulator.
+If the scenario is long, it will be split into multiple parts, and you will receive a continuation prompt for each part. Please evaluate each part based on the same factors as before. 
+Once I have sent all parts of the scenario, I will inform you by saying 'ALL PARTS SENT'.
+Each part is considered a sub-scenario and should be evaluated independently based on its realism and naturalness.
+Notes for evaluating the scenarios:
+1. When the scenario mentions the ego vehicle colliding after each step, it may imply that the ego vehicle and another vehicle are stuck after the collision.
+2. If the position of an NPC (Non-Player Character) is (0, 0, 0), it means the NPC has gone out of the map and no longer affects the scenario, so you do not need to evaluate it further.
+3. The scenario is designed to test how the ego vehicle reacts, so do not judge the ego's reaction.
+4. If any value of an NPC, such as velocity or angular_velocity, is (0, 0, 0) or too low, it may mean that these values cannot be estimated at that time and should not be treated as their actual values."""
                 messages.append(sys_message)
-                prompt = {}
-                prompt["role"] = "user"
-                prompt[
-                    "content"] = f"""{road_description[road]} This is a scenario generated for testing the ego vehicle. 
-                    The scenario starts at 0.0 seconds, with all objects starting from rest. {params_all} The scenario lasts for {self.total_time_step} time steps, each lasting 0.5 seconds.
+                initial_prompt = {}
+                initial_prompt["role"] = "user"
+                initial_prompt[
+                    "content"] = f"""{road_description[road]} The scenario contains {chunk_len} parts. This is the first part of a scenario generated for testing the ego vehicle. 
+                    The scenario starts at 0.0 seconds, with all objects starting from rest. {chunks[0]} The scenario lasts for {self.total_time_step} time steps, each lasting 0.5 seconds.
 
 Your task is to evaluate the degree of realism of this scenario on a scale from 1 to 10 based on the following factors:
 - Physical and Environmental Accuracy
@@ -161,7 +217,7 @@ Your task is to evaluate the degree of realism of this scenario on a scale from 
 - Dynamic Scenario Elements
 - Edge Case Representation
 - Temporal Consistency and Detail
-For each factor, provide the realism score (1-10) and a brief reason for the score. After evaluating each factor, calculate the **Average Realism Score** (average of all individual scores) and determine if the scenario is **Realistic** (True or False) based on the overall evaluation.
+For each factor, provide the realism score (1-10) and a brief reason for the score. After evaluating each factor, calculate the **Average Realism Score** (average of all individual scores) and determine if the scenario is **Realistic** (true or false) based on the overall evaluation.
 
 Please provide the output in the following JSON format:
 
@@ -169,66 +225,101 @@ Please provide the output in the following JSON format:
 {{
   "Physical and Environmental Accuracy": {{
     "realism_score": <score>,
-    "reason": "<brief reason>"
+    "reason": "<reason>"
   }},
   "Behavioral Realism of Other Road Users": {{
     "realism_score": <score>,
-    "reason": "<brief reason>"
+    "reason": "<reason>"
   }},
   "Dynamic Scenario Elements": {{
     "realism_score": <score>,
-    "reason": "<brief reason>"
+    "reason": "<reason>"
   }},
   "Edge Case Representation": {{
     "realism_score": <score>,
-    "reason": "<brief reason>"
+    "reason": "<reason>"
   }},
   "Temporal Consistency and Detail": {{
     "realism_score": <score>,
-    "reason": "<brief reason>"
+    "reason": "<reason>"
   }},
   "Average Realism Score": <average score>,
-  "Realistic": <True or False>
-}}"""
-                messages.append(prompt)
+  "Realistic": <true or false>
+}}"""           
+                if len(chunks) == 1:
+                    initial_prompt["content"] += "\nALL PARTS SENT."
+                messages.append(initial_prompt)
 
-                response = OpenAI.ChatCompletion.create(
-                    model="gpt-4",  
-                    messages=messages
-                )
-
-                first_chunk_response = response['choices'][0]['message']['content']
-
-                for i in range(1, len(chunks)):
-                    chunk = chunks[i]
-                    prompt_update = {
-                        "role": "user",
-                        "content": f"Continuing from the previous details: {chunk}"
-                    }
-                    messages.append(prompt_update)
-                    
-                    response = openai.ChatCompletion.create(
-                        model="gpt-4",  
-                        messages=messages
-                    )
-                    
-                    chunk_response = response['choices'][0]['message']['content']
-                final_prompt = {
-                    "role": "user",
-                    "content": "Now that you've processed all the chunks, please evaluate the scenario based on the details provided."
-                }
-
-                messages.append(final_prompt)
-                response = openai.ChatCompletion.create(
-                    model="gpt-4",
-                    messages=messages
-                )
-                # final_evaluation = response['choices'][0]['message']['content']
-
-
+                outputs = ""
+                output = ""
+                create_times = []
+                output_times = []
+                total_times = []
+                            
                 for index in range(repeat_time):
                     output, create_time, output_time, total_time = self.openai_gpt_4(model, messages, 0)
+                    outputs = outputs + "-------------------Part 1----------------------\n" + output + "\n"
+                    create_times.append(create_time)
+                    output_times.append(output_time)
+                    total_times.append(total_time)
+                    for idx, chunk in enumerate(chunks[1:], start=2):
+                        messages = []
+                        messages.append(sys_message)
+                        continuation_prompt = {
+                            "role": "user",
+                            "content": f"""
+                   The scenario contains {chunk_len} parts. This is part {idx} of a scenario generated for testing the ego vehicle. Keep in mind that this is a continuation, and the previous context is important for your evaluation.
+                   The scenario starts at 0.0 seconds. The scenario lasts for {self.total_time_step} time steps, each lasting 0.5 seconds.
+                   {chunk}
 
+                   Your task is to evaluate the degree of realism of this scenario on a scale from 1 to 10 based on the following factors:
+                    - Physical and Environmental Accuracy
+                    - Behavioral Realism of Other Road Users
+                    - Dynamic Scenario Elements
+                    - Edge Case Representation
+                    - Temporal Consistency and Detail
+                    For each factor, provide the realism score (1-10) and a brief reason for the score. After evaluating each factor, calculate the **Average Realism Score** (average of all individual scores) and determine if the scenario is **Realistic** (true or false) based on the overall evaluation.
+
+                    Please provide the output in the following JSON format:
+
+                    ```json
+                    {{
+                    "Physical and Environmental Accuracy": {{
+                        "realism_score": <score>,
+                        "reason": "<reason>"
+                    }},
+                    "Behavioral Realism of Other Road Users": {{
+                        "realism_score": <score>,
+                        "reason": "<reason>"
+                    }},
+                    "Dynamic Scenario Elements": {{
+                        "realism_score": <score>,
+                        "reason": "<reason>"
+                    }},
+                    "Edge Case Representation": {{
+                        "realism_score": <score>,
+                        "reason": "<reason>"
+                    }},
+                    "Temporal Consistency and Detail": {{
+                        "realism_score": <score>,
+                        "reason": "<reason>"
+                    }},
+                    "Average Realism Score": <average score>,
+                    "Realistic": <true or false>
+                    }}
+                    
+                    """
+                        }
+                        if idx == len(chunks):
+                            continuation_prompt["content"] += "\nALL PARTS SENT."
+                        messages.append(continuation_prompt)
+                        output = ""
+                        output, create_time, output_time, total_time = self.openai_gpt_4(model, messages, 0)
+                        outputs = outputs + f"-------------------Part {idx}----------------------\n" + output + "\n"
+                        create_times.append(create_time)
+                        output_times.append(output_time)
+                        total_times.append(total_time)
+                    output = outputs
                     #save 
                     evaluate_R_MR_extra_4full_experiments_results_path = "./outputs_results/" + road + "-scenarios/" + scenario_name + "/"
                     if not os.path.exists(evaluate_R_MR_extra_4full_experiments_results_path):
@@ -239,8 +330,8 @@ Please provide the output in the following JSON format:
                         index) + ".txt"
                     with open(evaluate_R_MR_extra_4full_experiments_results_file_name, 'w') as file:
                         file.write(f"model: {model}\n\n")
-                        file.write(messages[0]["content"] + "\n\n" + messages[1]["content"] + "\n\n\n")
                         file.write(output + "\n\n\n")
+                        file.write("----------------------Scenario---------------------\n" + params_all + "\n\n\n")
                         file.write(
                             f"create_time: {create_time}s output_time: {output_time}s total_time: {total_time}s\n")
 
@@ -250,39 +341,10 @@ Please provide the output in the following JSON format:
                     print(f"model: {model}")
                     print(f"index: {index}\n")
 
-                    #stats
-                    try:
-                        json_start_index = output.rfind('{')
-                        if json_start_index == -1:
-                            raise ValueError("No valid JSON found in the output.")
-                        json_string = output
-                        json_string = json_string[7:-3].strip()
-                        print(json_string)
-                        output_data = json.loads(json_string)                                                
-                        average_score = output_data.get("Average Realism Score", "N/A")
-                        is_realistic = output_data.get("Realistic", "N/A")
-                        if is_realistic:
-                            realistic_counts[road] += 1
-                        realism_scores[road].append(average_score)
-                    except json.JSONDecodeError as e:
-                        print("Error decoding JSON output:", e)
-
-        print("Summary of Realistic Scenarios:")
-        for road in road_list:
-            scenarios_names_list = [f for f in os.listdir(randomly_select_scenarios_path) if
-                                                    os.path.isfile(os.path.join(randomly_select_scenarios_path, f))]
-            total = len(scenarios_names_list)                                    
-            count = realistic_counts[road]
-            avg_score = sum(realism_scores[road]) / total
-            print(f"{road}:\nRealistic scenarios: {count}")
-            print(f"Average Realism Score: {avg_score:.2f}")
-            print(f"Total scenarios: {total}")
-
-
+                 
 if __name__ == '__main__':
     llmapi = LLMAPI()
 
-    model = "gpt-4o"
+    model = "gpt-4o-mini"
     repeat_time = 1
-
-    llmapi.evaluate_R_MR_extra_4full_experiments(model, repeat_time)
+    llmapi.evaluate_R_MR_extra_4full_experiments(model, repeat_time, 1)
