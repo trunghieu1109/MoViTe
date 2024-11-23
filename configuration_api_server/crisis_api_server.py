@@ -25,6 +25,8 @@ from datetime import timedelta
 
 from server_constants import *
 
+script_dir = os.path.dirname(os.path.abspath(__file__))
+
 observation_time = 6 
 
 # app config
@@ -51,13 +53,15 @@ NPC_QUEUE = queue.Queue(maxsize=10)
 
 is_collision_ahead = False
 prev_acc = 0
-time_offset = 0
+time_offset = TIME_OFFSET
 pedes_prev_pos = {}
 
 scenario = {}
 time_step_counter = 0
 scenario_counter = 0
 current_road = 0
+
+SAVING_SCENARIO = False
 
 current_lane = {
     'left_boundary': {
@@ -86,7 +90,7 @@ api_prefix = '/crisis/'
 msg_socket = None
 
 # traffic condiition map
-map = 'tartu' # map: tartu, sanfrancisco, borregasave
+map = MAP # map: tartu, sanfrancisco, borregasave
 lanes_map = None
 junctions_map = None
 lanes_junctions_map = None
@@ -108,21 +112,21 @@ def load_map_traffic_condition():
     global junctions_map
     global lanes_junctions_map
     
-    lanes_map_file = "./map/{}_lanes.pkl".format(map)
+    lanes_map_file = f"{script_dir}/map/{map}_lanes.pkl"
 
     with open(lanes_map_file, "rb") as file:
         lanes_map = pickle.load(file)
 
     file.close()
 
-    junctions_map_file = "./map/{}_junctions.pkl".format(map)
+    junctions_map_file = f"{script_dir}/map/{map}_junctions.pkl"
 
     with open(junctions_map_file, "rb") as file2:
         junctions_map = pickle.load(file2)
 
     file2.close()
 
-    lanes_junctions_map_file = "./map/{}_lanes_junctions.pkl".format(map)
+    lanes_junctions_map_file = f"{script_dir}/map/{map}_lanes_junctions.pkl"
 
     with open(lanes_junctions_map_file, "rb") as file3:
         lanes_junctions_map = pickle.load(file3)
@@ -271,9 +275,9 @@ def save_scenario(agent_uid, ego_state, npc_state, is_npc_vehicle):
         
     # Weather Info
     weather_state = sim.weather
-    rain_info = weather_state.rain
-    fog_info = weather_state.fog
-    wetness_info = weather_state.wetness
+    rain_info = round(weather_state.rain, 1)
+    fog_info = round(weather_state.fog, 1)
+    wetness_info = round(weather_state.wetness, 1)
     scenario["timestep_" + str(time_step_counter)]['weather'] = {
         'rain_level': weather_severity_type[str(rain_info)],
         'fog_level': weather_severity_type[str(fog_info)],
@@ -485,7 +489,7 @@ def calculate_metrics(agents, ego, uid = None):
 
     while i < observation_time / time_step:
 
-        if TESTING:
+        if SAVING_SCENARIO:
             scenario['timestep_' + str(time_step_counter)] = {}
         
         # check apollo's modules status from dreamview
@@ -523,7 +527,7 @@ def calculate_metrics(agents, ego, uid = None):
                 if uid == collision_uid and (i * 2 + k + 1) * 0.25 <= 0.75:
                     sudden_appearance = True
                         
-        if TESTING:
+        if SAVING_SCENARIO:
             local_info, control_info = get_apollo_msg_for_saving()
             extract_lane_info(local_info, control_info)
         
@@ -539,6 +543,8 @@ def calculate_metrics(agents, ego, uid = None):
         pos = {}
         
         agent_uid.append(ego.uid)
+                
+        ego_state = ego.state
         
         for j in range(1, len(agents)):
             state_ = agents[j].state
@@ -575,11 +581,9 @@ def calculate_metrics(agents, ego, uid = None):
             'z': ego_state.position.z,
             'dis_to_ego': 0
         }
-        
-        ego_state = ego.state
 
         # save to scenario.json
-        if TESTING:
+        if SAVING_SCENARIO:
             save_scenario(agent_uid, ego_state, npc_state, is_npc_vehicle)
             time_step_counter += 1
             
@@ -646,15 +650,28 @@ def load_scene():
     global time_step_counter
     global scenario_counter
     global current_road
+    global SAVING_SCENARIO
+    global NPC_QUEUE
+
+    while not NPC_QUEUE.empty():
+        NPC_QUEUE.get_nowait()
 
     # saving scenario
     saving = request.args.get('saving')
+    
+    if saving == "1":
+        SAVING_SCENARIO = True
+    else:
+        SAVING_SCENARIO = False
 
-    if 'timestep_0' in scenario and saving == "1":
+    if 'timestep_0' in scenario and SAVING_SCENARIO:
 
         print(scenario)
 
-        prefix = "" + "road" + str(current_road) + "-scenarios/"
+        prefix = script_dir + "/" + "road" + str(current_road) + "-scenarios/"
+
+        os.makedirs(prefix, exist_ok=True)
+        
         scenario_path = prefix + "scenario" + str(scenario_counter) + ".json"
         with open(scenario_path, "w") as file:
             json.dump(scenario, file, indent=4)
@@ -683,7 +700,7 @@ def load_scene():
     EGO = None
     state = lgsvl.AgentState()
     
-    endpoint_json = open('./map_endpoint/ego_endpoint.json', 'r')
+    endpoint_json = open(f'{script_dir}/map_endpoint/ego_endpoint.json', 'r')
     endpoint_list = endpoint_json.read()
     ego_endpoint = json.loads(s=endpoint_list)
     
@@ -745,15 +762,15 @@ def rain():
     rain_level = request.args.get('rain_level')
     r_level = 0
     w_level = 0
-    if rain_level == 'Light':
+    if rain_level == 'light':
         r_level = 0.2
         w_level = 0.2
 
-    elif rain_level == 'Moderate':
+    elif rain_level == 'moderate':
         r_level = 0.5
         w_level = 0.5
         
-    elif rain_level == 'Heavy':
+    elif rain_level == 'heavy':
         r_level = 1
         w_level = 1
         
@@ -767,17 +784,17 @@ def rain():
 
 @app.route(f'{api_prefix}/control/weather/fog', methods=['POST'])
 def fog():
-    
+   
     fog_level = request.args.get('fog_level')
     f_level = 0
     
-    if fog_level == 'Light':
+    if fog_level == 'light':
         f_level = 0.2
         
-    elif fog_level == 'Moderate':
+    elif fog_level == 'moderate':
         f_level = 0.5
         
-    elif fog_level == 'Heavy':
+    elif fog_level == 'heavy':
         f_level = 1
         
     sim.weather = lgsvl.WeatherState(rain=0, fog=f_level, wetness=0)
@@ -793,13 +810,13 @@ def wetness():
     
     wetness_level = request.args.get('wetness_level')
     w_level = 0
-    if wetness_level == 'Light':
+    if wetness_level == 'light':
         w_level = 0.2
         
-    elif wetness_level == 'Moderate':
+    elif wetness_level == 'moderate':
         w_level = 0.5
         
-    elif wetness_level == 'Heavy':
+    elif wetness_level == 'heavy':
         w_level = 1
         
     sim.weather = lgsvl.WeatherState(rain=0, fog=0, wetness=w_level)
@@ -817,13 +834,13 @@ def time_of_day():
     time = request.args.get('time_of_day')
     day_time = (10 + time_offset) % 24  # initial time: 10
     
-    if time == 'Morning':
+    if time == 'morning':
         day_time = (10 + time_offset) % 24
         
-    elif time == 'Noon':
+    elif time == 'noon':
         day_time = (14 + time_offset) % 24 
         
-    elif time == 'Evening':
+    elif time == 'evening':
         day_time = (20 + time_offset) % 24
         
     sim.set_time_of_day(day_time, fixed=True)
@@ -838,6 +855,7 @@ def add_npc_cross_road():
 
     global cars
     global colors
+    global NPC_QUEUE
     
     which_car = cars[random.randint(0, 5)]
     color = colors[random.randint(0, 5)]
@@ -917,6 +935,7 @@ def add_npc_cross_road():
 def add_pedestrian_cross_road():
     
     global pedes_prev_pos
+    global NPC_QUEUE
     
     direction = request.args.get('direction')
     
@@ -967,6 +986,7 @@ def add_npc_drive_ahead():
 
     global cars
     global colors
+    global NPC_QUEUE
     
     which_lane = request.args.get('lane')
     which_car = cars[random.randint(0, 5)]
@@ -1054,6 +1074,7 @@ def add_npc_overtake():
     
     global cars
     global colors
+    global NPC_QUEUE
     
     which_lane = request.args.get('lane')
     which_car = cars[random.randint(0, 5)]
@@ -1125,6 +1146,10 @@ def add_npc_overtake():
 @app.route(f'{api_prefix}/agents/npc-vehicle/drive-opposite', methods=['POST'])
 def add_npc_drive_opposite():
 
+    global NPC_QUEUE
+    global cars
+    global colors
+
     which_car = cars[random.randint(0, 5)]
     color = colors[random.randint(0, 5)]
     change_lane = int(request.args.get('maintainlane'))
@@ -1140,11 +1165,10 @@ def add_npc_drive_opposite():
         offset = 20
     else:
         offset = 50
-
-    if which_car == 'BoxTruck' or which_car == 'SchoolBus':
-        forward = offset * forward
-        right = 8 * right
-        speed = 20
+   
+    forward = offset * forward
+    right = 8 * right
+    speed = 20
 
     point = ego_transform.position - right + forward
 

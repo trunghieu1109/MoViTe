@@ -16,7 +16,7 @@ NUMBER_WEATHER_TIME = 13
 NUMBER_NPC_VEHICLE = 30
 NUMBER_PEDESTRIAN = 2
 
-USE_WEATHER_TIME = False
+USE_WEATHER_TIME = True
 USE_NPC_VEHICLE = True
 USE_PEDESTRIAN = True
 
@@ -27,7 +27,7 @@ HyperParameter = dict(BATCH_SIZE=64, GAMMA=0.9, EPS_START=1, EPS_END=0.1, EPS_DE
 PROB_DECAY = 0.05
 OBSERVATION_TIME = 6
 STOP_STEP = 5
-ROAD_NUM = "3"
+ROAD_NUM = "2"
 
 STOP_DIS = 3
 STOP_DIS_ALTITUDE = 25
@@ -36,17 +36,17 @@ RCOL = 7.5
 PENALTY_THRESHOLD = 0.2
 PENALTY = -1
 
-MODEL_PATH = "./model"
-LOG_PATH = "../ExperimentData/Log"
+MODEL_PATH = "model"
+LOG_PATH = "ExperimentData/Log"
 IN_MODEL_NAME = 'crisis_standard_sanfrancisco_road3'
 OUT_MODEL_NAME = 'crisis_standard_sanfrancisco_road3'
 LOG_NAME = 'crisis_standard_sanfrancisco_road3'
 REUSE_MEMORY_NAME = ""
 
-TEST_PATH = "../ExperimentData/Test"
+TEST_PATH = "ExperimentData/Test"
 TEST_NAME = 'crisis_standard_sanfrancisco_road3'
 TEST_ATTEMPT = 5
 TEST_SCENARIO_NUM = 15
-TEST_MODEL_EPS = 600
+TEST_MODEL_EPS = 5
 
 RANDOM_SEARCH_NAME = 'random_search_sanfrancisco_road3'

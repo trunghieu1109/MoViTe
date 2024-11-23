@@ -73,10 +73,10 @@ Next, download the simulator from the **[LGSVL](https://github.com/lgsvl/simulat
 ```bash
 
 # run this command to install lgsvl libraries
-python3 -m pip install -r ./PythonAPI/requirements.txt --user .
+python3 -m pip install -r ./PythonAPI/requirements.txt --user ./PythonAPI/
 
 # run this command to install remaining libraries
-python3 -m pip install -r requirements.txt --user .
+python3 -m pip install -r requirements.txt --user
 ```
 
 ## Quickstart

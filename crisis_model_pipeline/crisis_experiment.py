@@ -5,11 +5,13 @@ import pandas as pd
 import time
 import numpy as np
 import torch 
-from .crisis_training_model import DDQN
+from crisis_training_model import DDQN
 import json
 import os
 
-from .pipeline_constants import *
+from pipeline_constants import *
+
+script_dir = os.path.dirname(os.path.abspath(__file__))
 
 request_prefix = 'http://' + API_SERVER_HOST + ':' + str(API_SERVER_PORT) + "/crisis"
 
@@ -80,8 +82,8 @@ def judge_done():
 def calculate_reward(action_id):
     
     proc_list, obstacle_uid, sudden_appearance, overlapping, position_list, is_collision_ahead, pedes_mov_fw_to = execute_action(action_id)
-    observation, _ = get_environment_state()
-    
+    observation, pos = get_environment_state()
+
     # Collision Probability Reward
     
     collision_probability = 0
@@ -114,16 +116,20 @@ def calculate_reward(action_id):
     return observation, collision_probability, episode_done, proc_list, obstacle_uid, collision_info, sudden_appearance, overlapping, position_list, is_collision_ahead, pedes_mov_fw_to
 
 def check_test_folder():
+
+    test_prefix_path = script_dir + "/../" + TEST_PATH
     
-    test_path = f"{TEST_PATH}/{TEST_NAME}/"
+    test_path = f"{test_prefix_path}/{TEST_NAME}/"
     
     os.makedirs(test_path, exist_ok=True)
     
     return test_path
     
 def check_model_path():
+
+    model_prefix_path = script_dir + "/" + MODEL_PATH
     
-    model_path = f"{MODEL_PATH}/{TEST_NAME}"
+    model_path = f"{model_prefix_path}/{TEST_NAME}"
     
     if not os.path.isdir(model_path):
         raise Exception("Model path not found")
@@ -275,7 +281,7 @@ def log_action_info(iteration, test_log_path):
                 
 if __name__ == '__main__':
     for loop in range(0, TEST_ATTEMPT):
-        requests.post(f"{request_prefix}/load-scene?scene={scene}&road_num={road_num}&saving=0")
+        requests.post(f"{request_prefix}/load-scene?scene={scene}&road_num={road_num}&saving=1")
         requests.post(f"{request_prefix}/set-observation-time?observation_time={second}")
 
         action_space = get_action_space()['api']
@@ -305,7 +311,7 @@ if __name__ == '__main__':
         step = 0
         print("Start episode 0")
 
-        s = get_environment_state()
+        s, _ = get_environment_state()
         restart_episode()
 
         while True:

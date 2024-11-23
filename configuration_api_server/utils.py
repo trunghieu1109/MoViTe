@@ -27,7 +27,6 @@ def calculate_angle(vector1, vector2):
 
     return theta
 
-@jit(nopython=True, fastmath=True)
 def calculate_distance(vector1, vector2):
     distance = math.sqrt(pow(vector1[0] - vector2[0], 2) + pow(vector1[1] - vector2[1], 2) + pow(vector1[2] - vector2[2], 2))
     return distance

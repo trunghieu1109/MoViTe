@@ -16,15 +16,22 @@ import torch.nn as nn
 import torch.optim as optim
 import torch.nn.functional as F
 import torchvision.transforms as T
+import os
+
+from pipeline_constants import *
+
+script_dir = os.path.dirname(os.path.abspath(__file__))
+
+request_prefix = 'http://' + API_SERVER_HOST + ':' + str(API_SERVER_PORT) + "/crisis"
 
 # if gpu is to be used
-device = torch.device("cuda" if torch.cuda.isdevice = torch.device("cpu")
+device = torch.device("cpu")
 
 def calculate_distance(src, dest):
     return math.sqrt((src[0] - dest[0]) ** 2 + (src[1] - dest[1]) ** 2 + (src[2] - dest[2]) ** 2)
 
 def get_action_space():
-    json_file = open('../restful_api/api_service_list.json', 'r')
+    json_file = open(f'{script_dir}/../restful_api/api_service_list.json', 'r')
     content = json_file.read()
     restful_api = json.loads(s=content)
     return restful_api
@@ -32,7 +39,7 @@ def get_action_space():
 def get_environment_state():
     print(20*'-', "Get environment states", 20*'-')
     
-    r = requests.get("http://localhost:8933/LGSVL/Status/Environment/State")
+    r = requests.get(f"{request_prefix}/status/environment/state")
     a = r.json()
     state = np.zeros(23)
     state[0] = a['lane_info']

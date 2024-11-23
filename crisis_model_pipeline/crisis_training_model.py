@@ -5,15 +5,19 @@ import time
 import math
 import pickle
 import os
+import json
 
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from .memory.buffer import PrioritizedReplayBuffer
+from memory.buffer import PrioritizedReplayBuffer
 from utils import get_environment_state, get_action_space, calculate_distance
 
-from .pipeline_constants import *
+from pipeline_constants import *
+
+
+script_dir = os.path.dirname(os.path.abspath(__file__))
 
 # load model params
 continue_episode = ''
@@ -32,13 +36,20 @@ scene = SANFRANCISCO_MAP
 
 request_prefix = 'http://' + API_SERVER_HOST + ':' + str(API_SERVER_PORT) + "/crisis"
 
-requests.post(f"{request_prefix}/crisis/load-scene?scene={scene}&road_num={road_num}&saving=0")
+requests.post(f"{request_prefix}/load-scene?scene={scene}&road_num={road_num}&saving=0")
+
 file_name = str(int(time.time()))
 
+endpoint_json = open(f'{script_dir}/../configuration_api_server/map_endpoint/ego_endpoint.json', 'r')
+endpoint_list = endpoint_json.read()
+ego_endpoint = json.loads(s=endpoint_list)
+
+end_point = ego_endpoint[scene]['road' + road_num]['end']
+
 goal = [
-    -208.2, 
-    10.2, 
-    -181.6
+    end_point['position']['x'], 
+    end_point['position']['y'], 
+    end_point['position']['z']
 ]
 
 action_space = get_action_space()['api']
@@ -95,13 +106,16 @@ class DDQN(object):
         self.action_chosen_prob = [1 / self.num_of_action] * self.num_of_action
         self.npc_action_chosen_prob = [1 / self.num_of_npc_action] * self.num_of_npc_action
 
-    def update_action_prob(self, action):
+    def update_action_prob(self, action, is_testing):
         
         print(20*'-', "Update action probabilities", 20*'-')
         
         prob = self.action_chosen_prob[action]
         
         reduced_amount = prob * PROB_DECAY
+
+        if is_testing:
+            reduced_amount = 0
         
         for i in range(0, self.num_of_action):
             if i == action:
@@ -109,13 +123,16 @@ class DDQN(object):
             else:
                 self.action_chosen_prob[i] += reduced_amount / (self.num_of_action - 1)    
                 
-    def update_npc_action_prob(self, action):
+    def update_npc_action_prob(self, action, is_testing):
         
         print(20*'-', "Update driving action probabilities", 20*'-')
         
         prob = self.npc_action_chosen_prob[action]
         
         reduced_amount = prob * PROB_DECAY
+
+        if is_testing:
+            reduced_amount = 0
         
         for i in range(0, self.num_of_npc_action):
             if i == action:
@@ -149,7 +166,7 @@ class DDQN(object):
         
         # decide choosing method
         is_greedy = (np.random.uniform() > eps_threshold)
-        if self.steps_done <= HyperParameter["MEMORY_SIZE"]:
+        if self.steps_done <= HyperParameter["MEMORY_SIZE"] and not is_testing:
             is_greedy = False
             choose_method = 'randomly'
         
@@ -195,9 +212,9 @@ class DDQN(object):
                     action = action[0]
 
             # update action's probabilities
-            self.update_action_prob(action)
+            self.update_action_prob(action, is_testing)
             if 12 < action and USE_WEATHER_TIME:
-                self.update_npc_action_prob(action - (self.num_of_action - self.num_of_npc_action))
+                self.update_npc_action_prob(action - (self.num_of_action - self.num_of_npc_action), is_testing)
 
         return action, choose_method
 
@@ -241,7 +258,7 @@ class DDQN(object):
         td_error = torch.abs(q_eval - q_target).detach()
         loss = torch.mean(torch.abs(q_eval - q_target) ** 2 * weights)
 
-        pd.DataFrame([[self.learn_step_counter, self.optimizer.param_groups[0]['lr'], loss.item()]]).to_csv('./loss_log/loss_log_' + file_name + '.csv', 
+        pd.DataFrame([[self.learn_step_counter, self.optimizer.param_groups[0]['lr'], loss.item()]]).to_csv(f'{script_dir}/loss_log/loss_log_' + file_name + '.csv', 
                                                          mode='a', header=False, index=None)
 
         # back propagation and update priorities
@@ -347,14 +364,17 @@ def calculate_reward(action_id):
     return observation, pos, action_reward, collision_probability, episode_done, proc_list, obstacle_uid, collision_info, col_uid, generated_uid
 
 def check_model_folder():
-    print("Model folder: ", MODEL_PATH)
+
+    model_path = script_dir + "/" + MODEL_PATH
+
+    print("Model folder: ", model_path)
     print("In folder name: ", IN_MODEL_NAME)
     print("Out folder name: ", OUT_MODEL_NAME)
     
-    os.makedirs(MODEL_PATH, exist_ok=True)
+    os.makedirs(model_path, exist_ok=True)
     
-    in_model_path = MODEL_PATH + "/" + IN_MODEL_NAME
-    out_model_path = MODEL_PATH + "/" + OUT_MODEL_NAME
+    in_model_path = model_path + "/" + IN_MODEL_NAME
+    out_model_path = model_path + "/" + OUT_MODEL_NAME
     
     if not os.path.isdir(in_model_path):
         print("Create in dir", in_model_path)
@@ -365,13 +385,19 @@ def check_model_folder():
         os.makedirs(out_model_path)
         
 def check_log_folder():
-    os.makedirs(LOG_PATH, exist_ok=True)
+
+    log_path = script_dir + "/../" + LOG_PATH
+    print("Log path: ", log_path)
+
+    os.makedirs(log_path, exist_ok=True)
 
 def load_model(ddqn, continue_episode):
+
+    model_path = script_dir + "/" + MODEL_PATH
     
     print("Continue at episode: " + continue_episode)
     
-    in_model_path = MODEL_PATH + "/" + IN_MODEL_NAME
+    in_model_path = model_path + "/" + IN_MODEL_NAME
         
     with open(f"{in_model_path}/rl_network_{continue_episode}_road{road_num}.pkl", "rb") as file:
         ddqn = pickle.load(file)
@@ -385,10 +411,12 @@ def load_model(ddqn, continue_episode):
     return ddqn
 
 def load_buffer_memory(ddqn, reuse_episode):
+
+    model_path = script_dir + "/" + MODEL_PATH
     
     print("Reuse memory buffer from episode: " + reuse_episode)
     
-    reuse_path = MODEL_PATH + "/" + REUSE_MEMORY_NAME
+    reuse_path = model_path + "/" + REUSE_MEMORY_NAME
         
     with open(f"{reuse_path}/rl_network_{reuse_episode}_road{road_num}.pkl", "rb") as file:
         ddqn = pickle.load(file)
@@ -501,8 +529,10 @@ def judge_done_to_goal(curr_pos, done):
     return done
 
 def save_model(i_episode, ddqn):
+
+    model_path = script_dir + "/" + MODEL_PATH
     
-    out_model_path = MODEL_PATH + "/" + OUT_MODEL_NAME
+    out_model_path = model_path + "/" + OUT_MODEL_NAME
     
     if (i_episode + 1) % 5 == 0:
         
@@ -558,7 +588,8 @@ if __name__ == '__main__':
     # logging
     check_log_folder()
     file_name = str(int(time.time()))
-    log_name = f"{LOG_PATH}/{LOG_NAME}_{file_name}.csv"
+    log_path = script_dir + "/../" + LOG_PATH
+    log_name = f"{log_path}/{LOG_NAME}_{file_name}.csv"
     
     title = ["Episode", "Step", "State", "Action", "Reward", "Collision Probability", "Collision Probability List", "Action_Description", "Done"]
     df_title = pd.DataFrame([title])

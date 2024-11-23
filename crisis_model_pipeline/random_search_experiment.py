@@ -7,9 +7,11 @@ import numpy as np
 import json
 import os
 
-from .utils import get_environment_state
+from utils import get_environment_state
 
-from .pipeline_constants import *
+from pipeline_constants import *
+
+script_dir = os.path.dirname(os.path.abspath(__file__))
 
 request_prefix = 'http://' + API_SERVER_HOST + ':' + str(API_SERVER_PORT) + "/crisis"
 scene = SANFRANCISCO_MAP
@@ -99,8 +101,10 @@ def calculate_reward(action_id):
     return collision_probability, episode_done, proc_list, obstacle_uid, collision_info, sudden_appearance, overlapping, position_list, is_collision_ahead, pedes_mov_fw_to
 
 def check_test_folder():
+
+    test_prefix_path = script_dir + "/../" + TEST_PATH
     
-    test_path = f"{TEST_PATH}/{RANDOM_SEARCH_NAME}/"
+    test_path = f"{test_prefix_path}/{RANDOM_SEARCH_NAME}/"
     
     os.makedirs(test_path, exist_ok=True)
     
@@ -279,7 +283,7 @@ if __name__ == '__main__':
 
         while True:
             
-            s = get_environment_state()
+            s, _ = get_environment_state()
                 
             retry = True
             
