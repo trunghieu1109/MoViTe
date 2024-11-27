@@ -8,3 +8,6 @@ torchvision
 shapely
 openai
 token-count
+kneed
+tsfresh
+scikit-learn
