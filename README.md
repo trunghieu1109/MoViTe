@@ -12,6 +12,7 @@ In this paper, we propose CRISIS, a Reinforcement Learning (RL)-based approach t
 CRISIS is evaluated on two popular simulation maps with four different road configurations. Our results show CRISIS's ability to outperform the state-of-the-art approach by generating 30\% to 115\% more collision scenarios. Compared to the baseline based on Random Search, CRISIS achieves up to 275\% better performance. These results highlight the effectiveness of CRISIS in enhancing the safety testing of AVs through realistic comprehensive critical scenario generation.
 
 ## The architecture
+![](figs/CRISIS-architecture.png)
 
 CRISIS leverages a Double Deep-Q Network (DDQN) to train an RL agent that can observe both the ADS **internal states** and surrounding **external states** to select optimal actions to configure the environment. 
 
